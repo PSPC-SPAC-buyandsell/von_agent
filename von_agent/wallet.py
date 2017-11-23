@@ -176,7 +176,7 @@ class Wallet:
                 config=self.cfg_json,
                 credentials=None)
         except IndyError as e:
-            print(e)
+            print(e.error_code)
             if e.error_code == ErrorCode.WalletAlreadyExistsError:
                 pass
                 # logger.info('Wallet.open: wallet {} already exists, incrementing ...')

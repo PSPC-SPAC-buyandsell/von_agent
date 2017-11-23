@@ -167,24 +167,23 @@ class Wallet:
         logger = logging.getLogger(__name__)
         logger.debug('Wallet.open: >>>')
 
-        while True:
-            try:
-                await wallet.create_wallet(
-                    pool_name=self.pool_name,
-                    name=self.name,
-                    xtype=None,
-                    config=self.cfg_json,
-                    credentials=None)
-                break
-            except IndyError as e:
-                print(e)
-                if e.error_code == ErrorCode.WalletAlreadyExistsError:
-                    pass
-                    # logger.info('Wallet.open: wallet {} already exists, incrementing ...')
-                    # self._num += 1
-                    # continue
-                else:
-                    raise
+        # while True:
+        try:
+            await wallet.create_wallet(
+                pool_name=self.pool_name,
+                name=self.name,
+                xtype=None,
+                config=self.cfg_json,
+                credentials=None)
+        except IndyError as e:
+            print(e)
+            if e.error_code == ErrorCode.WalletAlreadyExistsError:
+                pass
+                # logger.info('Wallet.open: wallet {} already exists, incrementing ...')
+                # self._num += 1
+                # continue
+            else:
+                raise
 
         self._handle = await wallet.open_wallet(self.name, self.cfg_json, None)
         logger.info('Wallet.open: created and opened wallet {} on handle {}'.format(self.name, self.handle))

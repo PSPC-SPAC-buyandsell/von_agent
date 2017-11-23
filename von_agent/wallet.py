@@ -178,9 +178,10 @@ class Wallet:
                 break
             except IndyError as e:
                 if e.error_code == ErrorCode.WalletAlreadyExistsError:
-                    logger.info('Wallet.open: wallet {} already exists, incrementing ...')
-                    self._num += 1
-                    continue
+                    pass
+                    # logger.info('Wallet.open: wallet {} already exists, incrementing ...')
+                    # self._num += 1
+                    # continue
                 else:
                     raise
 

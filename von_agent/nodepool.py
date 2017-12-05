@@ -15,6 +15,7 @@ limitations under the License.
 """
 
 from indy import pool
+from indy.error import ErrorCode
 
 import json
 import logging
@@ -99,7 +100,11 @@ class NodePool:
         logger = logging.getLogger(__name__)
         logger.debug('NodePool.open: >>>')
 
-        await pool.create_pool_ledger_config(self.name, json.dumps({'genesis_txn': str(self.genesis_txn_path)}))
+        try:
+            await pool.create_pool_ledger_config(self.name, json.dumps({'genesis_txn': str(self.genesis_txn_path)}))
+        except ErrorCode.PoolLedgerConfigAlreadyExistsError as e:
+            logger.info('Pool config already exists.')
+
         self._handle = await pool.open_pool_ledger(self.name, None)
 
         logger.debug('NodePool.open: <<<')

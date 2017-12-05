@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from indy import pool
+from indy import pool, IndyError
 from indy.error import ErrorCode
 
 import json
@@ -102,14 +102,17 @@ class NodePool:
 
         try:
             await pool.create_pool_ledger_config(self.name, json.dumps({'genesis_txn': str(self.genesis_txn_path)}))
-        except ErrorCode.PoolLedgerConfigAlreadyExistsError as e:
-            logger.info('Pool config already exists.')
+        except IndyError as e:
+            if e.error_code is ErrorCode.PoolLedgerConfigAlreadyExistsError:
+                logger.info('Pool config already exists.')
+            else:
+                raise e
 
         self._handle = await pool.open_pool_ledger(self.name, None)
 
         logger.debug('NodePool.open: <<<')
         return self
-        
+
     async def __aexit__(self, exc_type, exc, traceback) -> None: 
         """
         Context manager exit. Closes pool and deletes its configuration to ensure clean next entry.
@@ -137,7 +140,7 @@ class NodePool:
         logger.debug('NodePool.close: >>>')
 
         await pool.close_pool_ledger(self.handle)
-        await pool.delete_pool_ledger_config(self.name)
+        # await pool.delete_pool_ledger_config(self.name)
 
         logger.debug('NodePool.close: <<<')
 

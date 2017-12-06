@@ -881,6 +881,31 @@ class Issuer(BaseListeningAgent):
     Mixin for agent acting in role of Issuer
     """
 
+    async def send_schema(self, schema_data_json: str) -> str:
+        """
+        Method for schema originator to send schema to ledger, then retrieve it as written
+        (and completed through the write process to the ledger) and return it.
+
+        :param schema_data_json: schema data json with name, version, attribute names;
+            e.g.,: {
+                'name': 'my-schema',
+                'version': '1.234',
+                'attr_names': ['favourite_drink', 'height', 'last_visit_date']
+            }
+        :return: schema json as written to ledger
+        """
+
+        logger = logging.getLogger(__name__)
+        logger.debug('Origin.send_schema: >>> schema_data_json: {}'.format(schema_data_json))
+
+        req_json = await ledger.build_schema_request(self.did, schema_data_json)
+        resp_json = await ledger.sign_and_submit_request(self.pool.handle, self.wallet.handle, self.did, req_json)
+        resp = (json.loads(resp_json))['result']
+
+        rv = await self.get_schema(resp['identifier'], resp['data']['name'], resp['data']['version'])
+        logger.debug('Origin.send_schema: <<< {}'.format(rv))
+        return rv
+
     async def send_claim_def(self, schema_json: str) -> str:
         """
         Method for Issuer to create a claim definition, store it in its wallet, and send it to the ledger.

@@ -925,6 +925,8 @@ class Issuer(BaseListeningAgent):
             'CL',
             False)
 
+        logger.info('\n\n\n\n\n\n\nvon-agent claim_def\n' + claim_def_json + '\n\n\n\n\n\n\n\n')
+
         req_json = await ledger.build_claim_def_txn(
             self.did,
             schema['seqNo'],

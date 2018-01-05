@@ -1160,8 +1160,8 @@ class HolderProver(BaseListeningAgent):
 
     async def create_proof(self,
             proof_req_json: str,
-            schema: dict,
-            claim_def: dict,
+            schemas_json: dict,
+            claim_defs_json: dict,
             requested_claims: dict = None) -> str:
         """
         Method for HolderProver to create proof.
@@ -1214,10 +1214,10 @@ class HolderProver(BaseListeningAgent):
 
         logger = logging.getLogger(__name__)
         logger.debug(
-            'HolderProver.create_proof: >>> proof_req_json: {}, schema: {}, claim_def: {}, requested_claims: {}'.format(
+            'HolderProver.create_proof: >>> proof_req_json: {}, schemas_json: {}, claim_defs_json: {}, requested_claims: {}'.format(
                 proof_req_json,
-                schema,
-                claim_def,
+                schemas_json,
+                claim_defs_json,
                 requested_claims))
 
         if self._master_secret is None:
@@ -1231,15 +1231,9 @@ class HolderProver(BaseListeningAgent):
             self.wallet.handle,
             proof_req_json,
             json.dumps(requested_claims),
-            json.dumps({  # schemas_json
-                claim_uuid[0]: schema
-                    for claim_uuid in requested_claims['requested_attrs'].values()
-            }),
+            schemas_json,
             self._master_secret,
-            json.dumps({  # claim_defs_json
-                claim_uuid[0]: claim_def
-                    for claim_uuid in requested_claims['requested_attrs'].values()
-            }),
+            claim_defs_json,
             json.dumps({})  # revoc_regs_json
         )
         logger.debug('HolderProver.create_proof: <<< {}'.format(rv))

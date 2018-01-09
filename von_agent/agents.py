@@ -1569,7 +1569,7 @@ class Verifier(BaseListeningAgent):
     Mixin for agent acting in the role of Verifier.
     """
 
-    async def verify_proof(self, proof_req_json: str, proof: dict, schema: dict, claim_def: dict) -> str:
+    async def verify_proof(self, proof_req_json: str, proof: dict, schemas_json: str, claim_defs_json: str) -> str:
         """
         Method for Verifier to verify proof.
 
@@ -1608,22 +1608,18 @@ class Verifier(BaseListeningAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('Verifier.verify_proof: >>> proof_req_json: {}, proof: {}, schema: {}, claim_def: {}'.format(
+        logger.debug('Verifier.verify_proof: >>> proof_req_json: {}, proof: {}, schemas_json: {}, claim_defs_json: {}'.format(
             proof_req_json,
             proof,
-            schema,
-            claim_def))
+            schemas_json,
+            claim_defs_json))
 
         rv = json.dumps(
             await anoncreds.verifier_verify_proof(
                 proof_req_json,
                 json.dumps(proof),
-                json.dumps({  # schemas_json
-                    claim_uuid: schema for claim_uuid in proof['proofs']
-                }),
-                json.dumps({  # claim_defs_json
-                    claim_uuid: claim_def for claim_uuid in proof['proofs']
-                }),
+                schemas_json,
+                claim_defs_json,
                 json.dumps({})  # revoc_regs_json
             )
         )

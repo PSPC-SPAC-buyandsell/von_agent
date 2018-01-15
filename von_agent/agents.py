@@ -1088,7 +1088,11 @@ class HolderProver(BaseListeningAgent):
         logger = logging.getLogger(__name__)
         logger.debug('HolderProver.create_master_secret: >>> master_secret {}'.format(master_secret))
 
-        await anoncreds.prover_create_master_secret(self.wallet.handle, master_secret)
+        try:
+            await anoncreds.prover_create_master_secret(self.wallet.handle, master_secret)
+        except Exception as e:
+            pass
+
         self._master_secret = master_secret
         logger.debug('HolderProver.create_master_secret: <<<')
 

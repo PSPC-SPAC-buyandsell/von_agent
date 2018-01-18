@@ -199,7 +199,7 @@ class Wallet:
 
     async def __aexit__(self, exc_type, exc, traceback) -> None: 
         """
-        Context manager exit. Closes and deletes wallet.
+        Context manager exit. Closes wallet.
         For use in monolithic call opening, using, and closing the wallet.
 
         :param exc_type:
@@ -224,7 +224,6 @@ class Wallet:
         logger.debug('Wallet.close: >>>')
 
         await wallet.close_wallet(self.handle)
-        await wallet.delete_wallet(self.name, None)
 
         logger.debug('Wallet.close: <<<')
 

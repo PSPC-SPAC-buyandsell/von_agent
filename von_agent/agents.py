@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import asyncio
+
 from indy import anoncreds, ledger
 from re import match
 from requests import post
@@ -171,6 +173,8 @@ class BaseAgent:
             self.did,
             did)
         resp_json = await ledger.submit_request(self.pool.handle, get_nym_req)
+        await asyncio.sleep(0)
+
         data_json = (json.loads(resp_json))['result']['data']  # it's double-encoded on the ledger
         if data_json is None:
             return json.dumps({})
@@ -203,6 +207,7 @@ class BaseAgent:
             issuer_did,
             json.dumps({'name': name, 'version': version}))
         resp_json = await ledger.submit_request(self.pool.handle, req_json)
+        await asyncio.sleep(0)
         resp = json.loads(resp_json)
 
         data_json = (json.loads(resp_json))['result']['data']  # it's double-encoded on the ledger
@@ -229,6 +234,7 @@ class BaseAgent:
             did,
             'endpoint')
         resp_json = await ledger.submit_request(self.pool.handle, req_json)
+        await asyncio.sleep(0)
         data_json = (json.loads(resp_json))['result']['data']  # it's double-encoded on the ledger
         if data_json is None:
             return json.dumps({})
@@ -381,6 +387,8 @@ class BaseListeningAgent(BaseAgent):
             schema_seq_no,
             'CL',
             issuer_did)
+
+        await asyncio.sleep(0)
 
         resp_json = await ledger.submit_request(self.pool.handle, req_json)
 

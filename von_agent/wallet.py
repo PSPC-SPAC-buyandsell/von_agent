@@ -55,6 +55,8 @@ class Wallet:
             self._num = 0
         self._handle = None
         self._cfg_json = cfg_json
+        self._cfg_creds = '{"key":""}'
+        self._cfg_type = 'default'
 
         self._did = None
         self._verkey = None
@@ -122,6 +124,26 @@ class Wallet:
         return self._cfg_json
 
     @property
+    def cfg_creds(self) -> str:
+        """
+        Accessor for wallet credentials json
+
+        :return: wallet credentials json
+        """
+
+        return self._cfg_creds
+
+    @property
+    def cfg_type(self) -> str:
+        """
+        Accessor for wallet type
+
+        :return: wallet type
+        """
+
+        return self._cfg_type
+
+    @property
     def did(self) -> str:
         """
         Accessor for wallet DID
@@ -172,9 +194,9 @@ class Wallet:
             await wallet.create_wallet(
                 pool_name=self.pool_name,
                 name=self.name,
-                xtype=None,
+                xtype=self.cfg_type,
                 config=self.cfg_json,
-                credentials=None)
+                credentials=self.cfg_creds)
         except IndyError as e:
             print('e.error_code')
             print(e.error_code)
@@ -187,7 +209,7 @@ class Wallet:
             else:
                 raise
 
-        self._handle = await wallet.open_wallet(self.name, self.cfg_json, None)
+        self._handle = await wallet.open_wallet(self.name, self.cfg_json, self.cfg_creds)
         logger.info('Wallet.open: created and opened wallet {} on handle {}'.format(self.name, self.handle))
 
         (self._did, self._verkey) = (

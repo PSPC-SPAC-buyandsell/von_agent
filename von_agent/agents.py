@@ -35,25 +35,29 @@ class BaseAgent:
     Base class for agent
     """
 
-    def __init__(self, pool: NodePool, seed: str, wallet_base_name: str, wallet_cfg_json: str) -> None:
+    def __init__(self, pool: NodePool, seed: str, wallet_base_name: str, wallet_type: str, wallet_cfg_json: str, wallet_creds_json: str) -> None:
         """
         Initializer for agent. Does not open its wallet, only retains input parameters.
 
         :param pool: node pool on which agent operates
         :param seed: seed to bootstrap agent
         :param wallet_base_name: (base) name of wallet that agent uses
+        :param wallet_type: wallet type, None for default
         :param wallet_cfg_json: wallet configuration json, None for default
+        :param wallet_creds_json: wallet credentials json, None for default
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('BaseAgent.__init__: >>> pool {}, seed [SEED], wallet_base_name {}, wallet_cfg_json {}'.format(
+        logger.debug('BaseAgent.__init__: >>> pool {}, seed [SEED], wallet_base_name {}, wallet_type {}, wallet_cfg_json {}, wallet_creds_json {}'.format(
             pool,
             wallet_base_name,
-            wallet_cfg_json))
+            wallet_type,
+            wallet_cfg_json
+            wallet_creds_json))
 
         self._pool = pool
 
-        self._wallet = Wallet(pool.name, seed, wallet_base_name, 0, wallet_cfg_json)
+        self._wallet = Wallet(pool.name, seed, wallet_base_name, 0, wallet_type, wallet_cfg_json, wallet_creds_json)
 
         logger.debug('BaseAgent.__init__: <<<')
 
@@ -282,7 +286,9 @@ class BaseListeningAgent(BaseAgent):
             pool: NodePool,
             seed: str,
             wallet_base_name: str,
+            wallet_type: str,
             wallet_cfg_json: str,
+            wallet_creds_json: str,
             host: str,
             port: int,
             agent_api_path: str = '') -> None:
@@ -292,7 +298,9 @@ class BaseListeningAgent(BaseAgent):
         :pool: node pool on which agent operates
         :seed: seed to bootstrap agent
         :wallet_base_name: (base) name of wallet that agent uses
+        :wallet_type: none for default
         :wallet_cfg_json: wallet configuration json, None for default
+        :wallet_creds_json: wallet credentials json, None for default
         :host: agent IP address
         :port: agent port
         :agent_api_path: URL path to agent API, for use in proxying to further agents
@@ -303,12 +311,14 @@ class BaseListeningAgent(BaseAgent):
             'pool: {}, ' +
             'seed: [SEED], ' +
             'wallet_base_name: {}, ' +
+            'wallet_type: {}, ' +
             'wallet_cfg_json: {}, ' +
+            'wallet_creds_json: {}, ' +
             'host: {}, ' +
             'port: {}, ' +
-            'agent_api_path: {}'.format(pool, wallet_base_name, wallet_cfg_json, host, port, agent_api_path))
+            'agent_api_path: {}'.format(pool, wallet_base_name, wallet_type, wallet_cfg_json, wallet_creds_json, host, port, agent_api_path))
 
-        super().__init__(pool, seed, wallet_base_name, wallet_cfg_json)
+        super().__init__(pool, seed, wallet_base_name, wallet_type, wallet_cfg_json, wallet_creds_json)
         self._host = host
         self._port = port
         self._agent_api_path = agent_api_path
@@ -1044,7 +1054,9 @@ class HolderProver(BaseListeningAgent):
             pool: NodePool,
             seed: str,
             wallet_base_name: str,
+            wallet_type: str,
             wallet_cfg_json: str,
+            wallet_creds_json: str,
             host: str,
             port: int,
             agent_api_path: str = '') -> None:
@@ -1065,12 +1077,14 @@ class HolderProver(BaseListeningAgent):
             'pool: {}, ' +
             'seed: [SEED], ' +
             'wallet_base_name: {}, ' +
+            'wallet_type: {}, ' +
             'wallet_cfg_json: {}, ' +
+            'wallet_creds_json: {}, ' +
             'host: {}, ' +
             'port: {}, ' +
-            'agent_api_path: {}'.format(pool, wallet_base_name, wallet_cfg_json, host, port, agent_api_path))
+            'agent_api_path: {}'.format(pool, wallet_base_name, wallet_type, wallet_cfg_json, wallet_creds_json, host, port, agent_api_path))
 
-        super().__init__(pool, seed, wallet_base_name, wallet_cfg_json, host, port, agent_api_path)
+        super().__init__(pool, seed, wallet_base_name, wallet_type, wallet_cfg_json, wallet_creds_json, host, port, agent_api_path)
         self._master_secret = None
         self._claim_req_json = None  # FIXME: support multiple schema, use dict: txn_no -> claim_req_json
 

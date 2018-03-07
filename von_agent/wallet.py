@@ -26,7 +26,7 @@ class Wallet:
     Class encapsulating indy-sdk wallet.
     """
 
-    def __init__(self, pool_name: str, seed: str, base_name: str, num: int = 0, cfg_json: str = None) -> None:
+    def __init__(self, pool_name: str, seed: str, base_name: str, num: int = 0, wallet_type: str = None, cfg_json: str = None, creds_json: str = None) -> None:
         """
         Initializer for wallet. Stores input parameters and creates wallet.
         Does not open until open() or __enter__().
@@ -35,15 +35,19 @@ class Wallet:
         :param seed: seed for wallet user
         :param base_name: base name of the wallet (indy-sdk wallet name will take a dot and a number as a suffix)
         :param num: suffix number for wallet name
+        :param wallet_type: wallet type json, None for default
         :param cfg_json: wallet configuration json, None for default
+        :param creds_json: wallet credentials json, None for default
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('Wallet.__init__: >>> pool_name {}, seed [SEED], base_name {}, num {}, cfg_json {}'.format(
+        logger.debug('Wallet.__init__: >>> pool_name {}, seed [SEED], base_name {}, num {}, wallet_type {}, cfg_json {}, creds_json {}'.format(
             pool_name,
             base_name,
             num,
-            cfg_json))
+            wallet_type,
+            cfg_json,
+            creds_json))
 
         self._pool_name = pool_name
         self._seed = seed
@@ -54,9 +58,9 @@ class Wallet:
             logger.error('Wallet.__init__: input num {} is not an int, using 0'.format(num))
             self._num = 0
         self._handle = None
+        self._cfg_type = wallet_type
         self._cfg_json = cfg_json
-        self._cfg_creds = '{"key":""}'
-        self._cfg_type = 'default'
+        self._cfg_creds = creds_json
 
         self._did = None
         self._verkey = None

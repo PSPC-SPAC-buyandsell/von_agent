@@ -52,7 +52,7 @@ class BaseAgent:
             pool,
             wallet_base_name,
             wallet_type,
-            wallet_cfg_json
+            wallet_cfg_json,
             wallet_creds_json))
 
         self._pool = pool

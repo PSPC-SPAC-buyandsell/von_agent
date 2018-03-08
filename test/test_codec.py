@@ -1,5 +1,5 @@
 """
-Copyright 2017 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
+Copyright 2017-2018 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import pytest
 #noinspection PyUnusedLocal
 @pytest.mark.asyncio
 async def test_codec():
-    for plen in range(1, 1025):
+    for plen in range(0, 1025):
         plain = ''.join(choice(printable) for _ in range(plen))
         enc = encode(plain)
         dec = decode(enc)
@@ -33,4 +33,4 @@ async def test_codec():
     for plain in (None, -5, 0, 1024, 2**32 - 1, 2**32, 2**32 + 1):
         enc = encode(plain)
         dec = decode(enc)
-        assert str(plain) == dec
+        assert str(plain) == dec if plain is not None else plain == dec

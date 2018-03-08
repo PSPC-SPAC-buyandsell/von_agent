@@ -1,5 +1,5 @@
 """
-Copyright 2017 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
+Copyright 2017-2018 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,8 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from indy import pool, IndyError
-from indy.error import ErrorCode
+from indy import pool
+from indy.error import IndyError, ErrorCode
+from von_agent.validate_config import validate_config
 
 import json
 import logging
@@ -26,16 +27,26 @@ class NodePool:
     Class encapsulating indy-sdk node pool.
     """
 
-    def __init__(self, name: str, genesis_txn_path: str) -> None:
+    def __init__(self, name: str, genesis_txn_path: str, cfg: dict = None) -> None:
         """
         Initializer for node pool. Does not open the pool, only retains input parameters.
 
         :param name: name of the pool
         :param genesis_txn_path: path to genesis transaction file
+        :param cfg: configuration, None for default;
+            i.e., {
+                'auto-remove': bool (default False), whether to remove serialized indy configuration data on close
+            }
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('NodePool.__init__: >>> name: {}, genesis_txn_path: {}'.format(name, genesis_txn_path))
+        logger.debug('NodePool.__init__: >>> name: {}, genesis_txn_path: {}, cfg: {}'.format(
+            name,
+            genesis_txn_path,
+            cfg))
+
+        self._cfg = cfg or {}
+        validate_config('pool', self._cfg)
 
         self._name = name
         self._genesis_txn_path = genesis_txn_path
@@ -94,6 +105,8 @@ class NodePool:
         Explicit entry. Opens pool as configured, for later closure via close().
         For use when keeping pool open across multiple calls.
 
+        Raise any IndyError causing failure to create ledger configuration.
+
         :return: current object
         """
 
@@ -103,9 +116,10 @@ class NodePool:
         try:
             await pool.create_pool_ledger_config(self.name, json.dumps({'genesis_txn': str(self.genesis_txn_path)}))
         except IndyError as e:
-            if e.error_code is ErrorCode.PoolLedgerConfigAlreadyExistsError:
-                logger.info('Pool config already exists.')
+            if e.error_code == ErrorCode.PoolLedgerConfigAlreadyExistsError:
+                logger.info('Pool ledger config for {} already exists'.format(self.name))
             else:
+                logger.debug('NodePool.open: <!< indy error code {}'.format(e.error_code))
                 raise e
 
         self._handle = await pool.open_pool_ledger(self.name, None)
@@ -117,6 +131,8 @@ class NodePool:
         """
         Context manager exit. Closes pool and deletes its configuration to ensure clean next entry.
         For use in monolithic call opening, using, and closing the pool.
+
+        Raise any IndyError causing failure to create ledger configuration.
 
         :param exc_type:
         :param exc:
@@ -140,7 +156,8 @@ class NodePool:
         logger.debug('NodePool.close: >>>')
 
         await pool.close_pool_ledger(self.handle)
-        # await pool.delete_pool_ledger_config(self.name)
+        if self._cfg and 'auto-remove' in self._cfg and self._cfg['auto-remove']:
+            await pool.delete_pool_ledger_config(self.name)
 
         logger.debug('NodePool.close: <<<')
 

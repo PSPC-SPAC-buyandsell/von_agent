@@ -1,5 +1,5 @@
 """
-Copyright 2017 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
+Copyright 2017-2018 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,7 +15,9 @@ limitations under the License.
 """
 
 from binascii import hexlify, unhexlify
+from copy import deepcopy
 from math import ceil, log
+from von_agent.schema import SchemaKey, schema_key_for
 
 import json
 
@@ -30,12 +32,15 @@ def ppjson(dumpit):
 
 def encode(value):
     """
-    Encoder for claim values, returns encoded value.
+    Encode claim value.
     Operation leaves any (stringified) int32 alone: indy-sdk predicate claims operate on int32
     values properly only when their encoded values match their raw values.
 
     To disambiguate for decoding, the function adds 2**32 to any non-trivial transform.
     """
+
+    if value is None:
+        return '4294967297'  # sentinel 2**32 + 1
 
     s = str(value)
     try:
@@ -50,7 +55,7 @@ def encode(value):
 
 def decode(value: str):
     """
-    Decoder for encoded claim values, returns decoded value.
+    Decode encoded claim value.
 
     :param value: numeric string to decode
     """
@@ -61,6 +66,11 @@ def decode(value: str):
         return value
 
     i = int(value) - 2**32
+    if i == 0:
+        return ''  # special case: empty string encodes as 4294967296
+    elif i == 1:
+        return None  # sentinel 2**32 + 1
+
     blen = ceil(log(i, 16)/2)
     ibytes = unhexlify(i.to_bytes(blen, 'big'))
     return ibytes.decode()
@@ -68,120 +78,196 @@ def decode(value: str):
 
 def claims_for(claims: dict, filt: dict = {}) -> dict:
     """
-    Find indy-sdk claims matching input attribute-value dict from within input claims structure,
+    Find indy-sdk claims matching input filter from within input claims structure,
     json-loaded as returned via agent get_claims().
 
-    :param claims: claims structure via get_claims();
+    :param claims: claims structure returned by (HolderProver agent) get_claims(), or (equivalently)
+        response json structure at ['claims'] to response to POST 'claims-request' message type;
         e.g., {
             "attrs": {
                 "attr0_uuid": [
                     {
-                        "claim_uuid": "claim::00000000-0000-0000-0000-000000000000",
+                        "referent": "claim::00000000-0000-0000-0000-000000000000",
                         "attrs": {
                             "attr0": "2",
                             "attr1": "Hello",
                             "attr2": "World"
                         },
                         "issuer_did": "Q4zqM7aXqm7gDQkUVLng9h",
-                        "schema_seq_no": 21
+                        "schema_key": {
+                            "did": "Q4zqM7aXqm7gDQkUVLng9h",
+                            "name": "bc-reg",
+                            "version": "1.0"
+                        },
+                        "revoc_reg_seq_no": null
                     },
                     {
-                        "claim_uuid": "claim::00000000-0000-0000-0000-111111111111",
+                        "referent": "claim::00000000-0000-0000-0000-111111111111",
                         "attrs": {
                             "attr0": "1",
                             "attr1": "Nice",
                             "attr2": "Tractor"
                         },
                         "issuer_did": "Q4zqM7aXqm7gDQkUVLng9h",
-                        "schema_seq_no": 21
+                        "schema_key": {
+                            "did": "Q4zqM7aXqm7gDQkUVLng9h",
+                            "name": "bc-reg",
+                            "version": "1.0"
+                        },
+                        "revoc_reg_seq_no": null
                     }
                 ],
                 "attr1_uuid": [
                     {
-                        "claim_uuid": "claim::00000000-0000-0000-0000-000000000000",
+                        "referent": "claim::00000000-0000-0000-0000-000000000000",
                         "attrs": {
                             "attr0": "2",
                             "attr1": "Hello",
                             "attr2": "World"
                         },
                         "issuer_did": "Q4zqM7aXqm7gDQkUVLng9h",
-                        "schema_seq_no": 21
+                        "schema_key": {
+                            "did": "Q4zqM7aXqm7gDQkUVLng9h",
+                            "name": "bc-reg",
+                            "version": "1.0"
+                        },
+                        "revoc_reg_seq_no": null
                     },
                     {
-                        "claim_uuid": "claim::00000000-0000-0000-0000-111111111111",
+                        "referent": "claim::00000000-0000-0000-0000-111111111111",
                         "attrs": {
                             "attr0": "1",
                             "attr1": "Nice",
                             "attr2": "Tractor"
                         },
                         "issuer_did": "Q4zqM7aXqm7gDQkUVLng9h",
-                        "schema_seq_no": 21
+                        "schema_key": {
+                            "did": "Q4zqM7aXqm7gDQkUVLng9h",
+                            "name": "bc-reg",
+                            "version": "1.0"
+                        },
+                        "revoc_reg_seq_no": null
                     }
                 ],
                 "attr2_uuid": [
                     {
-                        "claim_uuid": "claim::00000000-0000-0000-0000-000000000000",
+                        "referent": "claim::00000000-0000-0000-0000-000000000000",
                         "attrs": {
                             "attr0": "2",
                             "attr1": "Hello",
                             "attr2": "World"
                         },
                         "issuer_did": "Q4zqM7aXqm7gDQkUVLng9h",
-                        "schema_seq_no": 21
+                        "schema_key": {
+                            "did": "Q4zqM7aXqm7gDQkUVLng9h",
+                            "name": "bc-reg",
+                            "version": "1.0"
+                        },
+                        "revoc_reg_seq_no": null
                     },
                     {
-                        "claim_uuid": "claim::00000000-0000-0000-0000-111111111111",
+                        "referent": "claim::00000000-0000-0000-0000-111111111111",
                         "attrs": {
                             "attr0": "1",
                             "attr1": "Nice",
                             "attr2": "Tractor"
                         },
                         "issuer_did": "Q4zqM7aXqm7gDQkUVLng9h",
-                        "schema_seq_no": 21
+                        "schema_key": {
+                            "did": "Q4zqM7aXqm7gDQkUVLng9h",
+                            "name": "bc-reg",
+                            "version": "1.0"
+                        },
+                        "revoc_reg_seq_no": null
                     }
                 ]
             }
         }
-    :param filt: attributes and values to match from claims structure
-    :return: human-legible dict mapping claim uuid to claim attributes for claims matching input filter
+    :param filt: filter for matching attributes and values; dict mapping each SchemaKey to
+        dict mapping attributes to values to match (specify empty dict for no filter). E.g.,
+        {
+            SchemaKey('Q4zqM7aXqm7gDQkUVLng9h', 'bc-reg', '1.0'): {
+                'attr0': '1',
+                'attr1': 'Nice'
+            },
+            ...
+        ]
+    :return: human-legible dict mapping referent to claim attributes for claims matching input filter
     """
 
-    uuid2claims = claims['attrs']
-    filt_str = {k: str(filt[k]) for k in filt}
     rv = {}
+    uuid2claims = claims['attrs']
     for claims in uuid2claims.values():
         for claim in claims:
-            if claim['claim_uuid'] not in rv and (filt_str.items() <= claim['attrs'].items()):
-                rv[claim['claim_uuid']] = claim['attrs']
+            if claim['referent'] in rv:
+                continue
+            if not filt:
+                rv[claim['referent']] = claim['attrs']
+                continue
+            claim_s_key = schema_key_for(claim['schema_key'])
+            if claim_s_key in filt:
+                if {k: str(filt[claim_s_key][k]) for k in filt[claim_s_key]}.items() <= claim['attrs'].items():
+                    rv[claim['referent']] = claim['attrs']
 
     return rv
 
 
-def prune_claims_json(claim_uuids: set, claims: dict) -> str:
+def schema_keys_for(claims: dict, referents: list) -> dict:
     """
-    Strips all claims out of the input json structure that do not match any of the input claim uuids
+    Given a claims structure and a list of referents (wallet claim-uuids),
+    return dict mapping each referent to its corresponding schema key instance.
 
-    :param claim_uuids: the set of claim uuids, as specified in claims json structure returned from get_claims,
-        showing up as dict keys that claims_for_value() returns
-    :param claims: claims structure returned by get_claims()
+    :param claims: claims structure returned by (HolderProver agent) get_claims(), or (equivalently)
+        response json structure at ['claims'] to response to POST 'claims-request' message type
+    :param referents: list of referents for which to find corresponding schema key
+    :return: schema key per referent (empty dict if no such referents present)
+    """
+
+    rv = {}
+    uuid2claims = claims['attrs']
+    for claims in uuid2claims.values():
+        for claim in claims:
+            referent = claim['referent']
+            if (referent not in rv) and (referent in referents):
+                rv[referent] = schema_key_for(claim['schema_key'])
+
+    return rv
+
+
+def prune_claims_json(claims: dict, referents: set) -> str:
+    """
+    Strip all claims out of the input json structure that do not match any of the input referents.
+
+    :param claims: claims structure returned by (HolderProver agent) get_claims(), or (equivalently)
+        response json structure at ['claims'] to response to POST 'claims-request' message type
+    :param referents: the set of referents, as specified in claims json structure returned from get_claims(),
+        showing up as dict keys that claims_for() returns
     :return: the reduced claims json
     """
 
-    for attr_uuid, claims_by_uuid in claims['attrs'].items():
-        claims['attrs'][attr_uuid] = [claim for claim in claims_by_uuid if claim['claim_uuid'] in claim_uuids]
+    rv = deepcopy(claims)
+    for attr_uuid, claims_by_uuid in rv['attrs'].items():
+        rv['attrs'][attr_uuid] = [claim for claim in claims_by_uuid if claim['referent'] in referents]
 
-    return json.dumps(claims)
+    empties = [attr_uuid for attr_uuid in rv['attrs'] if not rv['attrs'][attr_uuid]]
+    for attr_uuid in empties:
+        del rv['attrs'][attr_uuid]
+
+    return json.dumps(rv)
 
 
 def revealed_attrs(proof: dict) -> dict:
     """
-    Fetches revealed attributes from input proof, returns dict mapping attribute names to [decoded, encoded] values,
-    for processing as further claims downstream
+    Fetch revealed attributes from input proof and return dict
+    mapping referents to dicts mapping attribute names to (decoded) values,
+    for processing as further claims downstream.
 
-    :param: indy-sdk proof as dict (proving exactly one claim)
-    :return: dict mapping revealed attribute names to [decoded, encoded] values
+    :param: indy-sdk proof as dict
+    :return: dict mapping referents to dicts mapping revealed attribute names to decoded values
     """
 
-    revealed = proof['proofs'][set(proof['proofs']).pop()]['proof']['primary_proof']['eq_proof']['revealed_attrs']
-    rv = {attr: [decode(revealed[attr]), revealed[attr]] for attr in revealed}
+    rv = {}
+    for referent in proof['proof']['proofs']:
+        revealed = proof['proof']['proofs'][referent]['primary_proof']['eq_proof']['revealed_attrs']
+        rv[referent] = {attr: decode(revealed[attr]) for attr in revealed}
     return rv

@@ -1,5 +1,5 @@
 """
-Copyright 2017 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
+Copyright 2017-2018 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,13 +19,15 @@ from setuptools import setup
 
 
 pkg_name = 'von_agent'
-version = '0.0.0-dev-3'
+version = '0.5.0'
 
 
 setup(
     name=pkg_name,
-    packages=[pkg_name],
-    package_dir={pkg_name: pkg_name},
+    packages=[
+        pkg_name,
+        '{}.proto'.format(pkg_name)
+    ],
     version=version,
     description='VON agents',
     license='Apache Software License',
@@ -47,6 +49,7 @@ setup(
         'python3-indy',
         'requests',
         'chardet',
-        'certifi'
+        'certifi',
+        'jsonschema'
     ],
 )

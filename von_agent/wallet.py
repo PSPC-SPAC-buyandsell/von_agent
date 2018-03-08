@@ -1,5 +1,5 @@
 """
-Copyright 2017 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
+Copyright 2017-2018 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,8 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from indy import signus, wallet, IndyError
-from indy.error import ErrorCode
+from indy import did, wallet
+from indy.error import IndyError, ErrorCode
+from von_agent.validate_config import validate_config
 
 import json
 import logging
@@ -26,41 +27,42 @@ class Wallet:
     Class encapsulating indy-sdk wallet.
     """
 
-    def __init__(self, pool_name: str, seed: str, base_name: str, num: int = 0, wallet_type: str = None, cfg_json: str = None, creds_json: str = None) -> None:
+    def __init__(self, pool_name: str, seed: str, name: str, wallet_type: str = None, cfg: dict = None, creds: dict = None) -> None:
         """
-        Initializer for wallet. Stores input parameters and creates wallet.
+        Initializer for wallet. Store input parameters and create wallet.
         Does not open until open() or __enter__().
 
         :param pool_name: name of pool on which wallet operates
         :param seed: seed for wallet user
-        :param base_name: base name of the wallet (indy-sdk wallet name will take a dot and a number as a suffix)
-        :param num: suffix number for wallet name
-        :param wallet_type: wallet type json, None for default
-        :param cfg_json: wallet configuration json, None for default
-        :param creds_json: wallet credentials json, None for default
+        :param name: name of the wallet
+        :param wallet_type: wallet type str, None for default
+        :param cfg: wallet configuration dict, None for default
+            e.g., {
+                'auto-remove': bool (default False), whether to remove serialized indy configuration data on close,
+                ... (any other indy configuration data)
+            }
+        :param creds: wallet credentials dict, None for default
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('Wallet.__init__: >>> pool_name {}, seed [SEED], base_name {}, num {}, wallet_type {}, cfg_json {}, creds_json {}'.format(
+        logger.debug('Wallet.__init__: >>> pool_name {}, seed [SEED], name {}, wallet_type {}, cfg {}, creds {}'.format(
             pool_name,
-            base_name,
-            num,
+            name,
             wallet_type,
-            cfg_json,
-            creds_json))
+            cfg,
+            creds))
 
         self._pool_name = pool_name
         self._seed = seed
-        self._base_name = base_name
-        try:
-            self._num = int(num) 
-        except ValueError:
-            logger.error('Wallet.__init__: input num {} is not an int, using 0'.format(num))
-            self._num = 0
+        self._name = name
         self._handle = None
-        self._cfg_type = wallet_type
-        self._cfg_json = cfg_json
-        self._cfg_creds = creds_json
+        self._type = wallet_type
+        self._cfg = cfg or {}
+        # TODO will depend on the specific wallet type
+        # validate_config('wallet', self._cfg)
+        self._creds = creds or {}
+        # TODO will depend on the specific wallet type
+        # validate_config('credentials', self._creds)
 
         self._did = None
         self._verkey = None
@@ -70,7 +72,7 @@ class Wallet:
     @property
     def pool_name(self) -> str:
         """
-        Accessor for pool name
+        Accessor for pool name.
 
         :return: pool name
         """
@@ -78,39 +80,19 @@ class Wallet:
         return self._pool_name
 
     @property
-    def base_name(self) -> str:
-        """
-        Accessor for wallet base name
-
-        :return: wallet base name
-        """
-
-        return self._base_name
-
-    @property
     def name(self) -> str:
         """
-        Accessor for wallet (full) name
+        Accessor for wallet name.
 
-        :return: wallet (full) name
+        :return: wallet name
         """
 
-        return '{}.{}'.format(self._base_name, self._num)
-
-    @property
-    def num(self) -> int:
-        """
-        Accessor for wallet suffix number
-
-        :return: wallet suffix number
-        """
-
-        return self._num
+        return self._name
 
     @property
     def handle(self) -> int:
         """
-        Accessor for indy-sdk wallet handle
+        Accessor for indy-sdk wallet handle.
 
         :return: indy-sdk wallet handle
         """
@@ -118,39 +100,39 @@ class Wallet:
         return self._handle
 
     @property
-    def cfg_json(self) -> str:
+    def cfg(self) -> dict:
         """
-        Accessor for wallet config json
+        Accessor for wallet config.
 
-        :return: wallet config json
+        :return: wallet config
         """
 
-        return self._cfg_json
+        return self._cfg
 
     @property
-    def cfg_creds(self) -> str:
+    def creds(self) -> str:
         """
-        Accessor for wallet credentials json
+        Accessor for wallet credentials 
 
-        :return: wallet credentials json
+        :return: wallet credentials 
         """
 
-        return self._cfg_creds
+        return self._creds
 
     @property
-    def cfg_type(self) -> str:
+    def type(self) -> str:
         """
         Accessor for wallet type
 
         :return: wallet type
         """
 
-        return self._cfg_type
+        return self._type
 
     @property
     def did(self) -> str:
         """
-        Accessor for wallet DID
+        Accessor for wallet DID.
 
         :return: wallet DID
         """
@@ -160,7 +142,7 @@ class Wallet:
     @property
     def verkey(self) -> str:
         """
-        Accessor for wallet verification key
+        Accessor for wallet verification key.
 
         :return: wallet verification key
         """
@@ -169,8 +151,10 @@ class Wallet:
 
     async def __aenter__(self) -> 'Wallet':
         """
-        Context manager entry. Creates and opens wallet as configured, for closure on context manager exit.
+        Context manager entry. Create and open wallet as configured, for closure on context manager exit.
         For use in monolithic call opening, using, and closing wallet.
+
+        Raise any IndyError causing failure to open wallet.
 
         :return: current object
         """
@@ -184,8 +168,10 @@ class Wallet:
 
     async def open(self) -> 'Wallet':
         """
-        Explicit entry. Opens wallet as configured, for later closure via close().
+        Explicit entry. Open wallet as configured, for later closure via close().
         For use when keeping wallet open across multiple calls.
+
+        Raise any IndyError causing failure to open wallet.
 
         :return: current object
         """
@@ -193,39 +179,38 @@ class Wallet:
         logger = logging.getLogger(__name__)
         logger.debug('Wallet.open: >>>')
 
-        # while True:
-        try:
+        cfg = json.loads(json.dumps(self._cfg))  # deep copy
+        if 'auto-remove' in cfg:
+            cfg.pop('auto-remove')
+
             await wallet.create_wallet(
                 pool_name=self.pool_name,
                 name=self.name,
-                xtype=self.cfg_type,
-                config=self.cfg_json,
-                credentials=self.cfg_creds)
+                xtype=self.type,
+                config=json.dumps(cfg) if cfg else None,
+                credentials=json.dumps(creds) if creds else None)
+            logger.info('Created wallet {} on handle {}'.format(self.name, self.handle))
         except IndyError as e:
-            print('e.error_code')
-            print(e.error_code)
-            print(e.error_code == ErrorCode.WalletAlreadyExistsError)
             if e.error_code == ErrorCode.WalletAlreadyExistsError:
-                pass
-                # logger.info('Wallet.open: wallet {} already exists, incrementing ...')
-                # self._num += 1
-                # continue
+                logger.info('Opening existing wallet: {}'.format(self.name))
             else:
+                logger.debug('Wallet.open: <!< indy error code {}'.format(self.e.error_code))
                 raise
 
-        self._handle = await wallet.open_wallet(self.name, self.cfg_json, self.cfg_creds)
-        logger.info('Wallet.open: created and opened wallet {} on handle {}'.format(self.name, self.handle))
+        self._handle = await wallet.open_wallet(self.name, json.dumps(cfg) if cfg else None, None)
+        logger.info('Opened wallet {} on handle {}'.format(self.name, self.handle))
 
-        (self._did, self._verkey) = (
-            await signus.create_and_store_my_did(self._handle, json.dumps({'seed': self._seed})))
-        logger.info('Wallet.open: stored {}, {}'.format(self._did, self._verkey))
+        (self._did, self._verkey) = await did.create_and_store_my_did(  # apparently does no harm to overwrite it
+            self._handle,
+            json.dumps({'seed': self._seed}))
+        logger.debug('Wallet.open: stored {}, {}'.format(self._did, self._verkey))
 
         logger.debug('Wallet.open: <<<')
         return self
 
     async def __aexit__(self, exc_type, exc, traceback) -> None: 
         """
-        Context manager exit. Closes wallet.
+        Context manager exit. Close wallet and delete if so configured.
         For use in monolithic call opening, using, and closing the wallet.
 
         :param exc_type:
@@ -242,7 +227,7 @@ class Wallet:
 
     async def close(self) -> None:
         """
-        Explicit exit. Closes and deletes wallet.
+        Explicit exit. Close and delete wallet.
         For use when keeping wallet open across multiple calls.
         """
 
@@ -250,6 +235,24 @@ class Wallet:
         logger.debug('Wallet.close: >>>')
 
         await wallet.close_wallet(self.handle)
+        auto_remove = self.cfg.get('auto-remove', False)
+        if auto_remove:
+            await self.remove()
+
+        logger.debug('Wallet.close: <<<')
+
+    async def remove(self) -> None:
+        """
+        Remove serialized wallet configuration data if it exists.
+        """
+
+        logger = logging.getLogger(__name__)
+        logger.debug('Wallet.close: >>>')
+
+        try:
+            await wallet.delete_wallet(self.name, None)
+        except Exception:
+            logger.info('Abstaining from wallet removal: {}'.format(sys.exc_info()[0]))
 
         logger.debug('Wallet.close: <<<')
 
@@ -259,10 +262,9 @@ class Wallet:
 
         :return: representation for current object
         """
-
-        return '{}({}, [SEED], {}, {}, {})'.format(
+        
+        return '{}({}, [SEED], {}, {})'.format(
             self.__class__.__name__,
             self.pool_name,
-            self.base_name,
-            self.num,
-            self.cfg_json)
+            self.name,
+            self.cfg)

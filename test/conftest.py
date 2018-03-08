@@ -1,5 +1,5 @@
 """
-Copyright 2017 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
+Copyright 2017-2018 Government of Canada - Public Services and Procurement Canada - buyandsell.gc.ca
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,13 +24,16 @@ from tempfile import gettempdir
 
 import pytest
 
-from indy import wallet, pool, signus, ledger
+from indy import wallet, pool, ledger
 
 
-logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("indy").setLevel(logging.DEBUG)
-logging.getLogger("urllib3").setLevel(logging.ERROR)
-logging.getLogger("requests").setLevel(logging.ERROR)
+logging.basicConfig(level=logging.WARN, format='%(levelname)-8s | %(name)-12s | %(message)s')
+logging.getLogger('test.conftest').setLevel(logging.INFO)
+logging.getLogger('asyncio').setLevel(logging.WARN)
+logging.getLogger('von_agent').setLevel(logging.WARN)
+logging.getLogger('indy').setLevel(logging.ERROR)
+logging.getLogger('urllib3').setLevel(logging.ERROR)
+logging.getLogger('requests').setLevel(logging.ERROR)
 
 
 @pytest.fixture(scope="session")
@@ -79,15 +82,15 @@ def path_home() -> Path:
     path = Path.home().joinpath(".indy_client")
 
     if path.exists():
-        logger.debug("path_home: Cleanup home path: %r", path)
-        rmtree(str(path))
+        logger.debug("path_home: (abstaining from) cleanup home path: %r", path)
+        # rmtree(str(path))
 
     logger.debug("path_home: yield: %r", path)
     yield path
 
     if path.exists():
-        logger.debug("path_home: Cleanup home path: %r", path)
-        rmtree(str(path))
+        logger.debug("path_home: (abstaining from) cleanup home path: %r", path)
+        # rmtree(str(path))
 
     logger.debug("path_home: <<<")
 

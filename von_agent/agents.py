@@ -14,8 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import asyncio
-
 from indy import anoncreds, ledger
 from indy.error import IndyError, ErrorCode
 from requests import post, HTTPError
@@ -388,8 +386,6 @@ class _BaseAgent(_AgentCore):
             schema_seq_no,
             'CL',
             issuer_did)
-
-        await asyncio.sleep(0)
 
         resp_json = await ledger.submit_request(self.pool.handle, req_json)
         await asyncio.sleep(0)
@@ -771,31 +767,6 @@ class Issuer(Origin):
     Mixin for agent acting in role of Issuer. Any issuer may originate its own schema.
     """
 
-    async def send_schema(self, schema_data_json: str) -> str:
-        """
-        Method for schema originator to send schema to ledger, then retrieve it as written
-        (and completed through the write process to the ledger) and return it.
-
-        :param schema_data_json: schema data json with name, version, attribute names;
-            e.g.,: {
-                'name': 'my-schema',
-                'version': '1.234',
-                'attr_names': ['favourite_drink', 'height', 'last_visit_date']
-            }
-        :return: schema json as written to ledger
-        """
-
-        logger = logging.getLogger(__name__)
-        logger.debug('Origin.send_schema: >>> schema_data_json: {}'.format(schema_data_json))
-
-        req_json = await ledger.build_schema_request(self.did, schema_data_json)
-        resp_json = await ledger.sign_and_submit_request(self.pool.handle, self.wallet.handle, self.did, req_json)
-        resp = (json.loads(resp_json))['result']
-
-        rv = await self.get_schema(resp['identifier'], resp['data']['name'], resp['data']['version'])
-        logger.debug('Origin.send_schema: <<< {}'.format(rv))
-        return rv
-
     async def send_claim_def(self, schema_json: str) -> str:
         """
         Create a claim definition as Issuer, store it in its wallet, and send it to the ledger.
@@ -842,6 +813,7 @@ class Issuer(Origin):
                     wallet_cfg = self.wallet.cfg
                     await self.wallet.close()
                     await self.wallet.remove()
+                    # TODO wallet
                     self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_cfg)
                     await self.wallet.open()
 

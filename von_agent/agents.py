@@ -813,7 +813,7 @@ class Issuer(Origin):
                     wallet_cfg = self.wallet.cfg
                     await self.wallet.close()
                     await self.wallet.remove()
-                    # TODO wallet
+                    # TODO wallet open without full parameter set
                     self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_cfg)
                     await self.wallet.open()
 

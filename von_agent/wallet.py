@@ -183,6 +183,7 @@ class Wallet:
         if 'auto-remove' in cfg:
             cfg.pop('auto-remove')
 
+        try:
             await wallet.create_wallet(
                 pool_name=self.pool_name,
                 name=self.name,

@@ -181,8 +181,9 @@ class Wallet:
 
         cfg = json.loads(json.dumps(self._cfg))  # deep copy
         # TODO throws an exception
-        # if 'auto-remove' in cfg:
-        #     cfg.pop('auto-remove')
+        logger.info("auto_remove {}".format(auto_remove))
+        if 'auto-remove' in cfg:
+            cfg.pop('auto-remove')
         creds = json.loads(json.dumps(self._creds))
 
         try:
@@ -239,9 +240,10 @@ class Wallet:
 
         await wallet.close_wallet(self.handle)
         # TODO throws an exception
-        # auto_remove = self.cfg.get('auto-remove', False)
-        #if auto_remove:
-        #    await self.remove()
+        auto_remove = self.cfg.get('auto-remove', False)
+        logger.info("auto_remove {}".format(auto_remove))
+        if auto_remove:
+            await self.remove()
 
         logger.debug('Wallet.close: <<<')
 

@@ -1392,9 +1392,7 @@ class HolderProver(_BaseAgent):
         wallet_creds = self.wallet.creds
 
         await self.wallet.close()
-        # TODO comment out pending review
-        # await self.wallet.remove()
-        # TODO wallet open without full parameter set
+        await self.wallet.remove()
         self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_type, wallet_cfg, wallet_creds)
         await self.wallet.open()
 

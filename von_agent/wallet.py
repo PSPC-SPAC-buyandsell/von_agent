@@ -180,8 +180,9 @@ class Wallet:
         logger.debug('Wallet.open: >>>')
 
         cfg = json.loads(json.dumps(self._cfg))  # deep copy
-        if 'auto-remove' in cfg:
-            cfg.pop('auto-remove')
+        # TODO throws an exception
+        # if 'auto-remove' in cfg:
+        #     cfg.pop('auto-remove')
         creds = json.loads(json.dumps(self._creds))
 
         try:

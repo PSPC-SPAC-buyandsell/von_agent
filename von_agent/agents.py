@@ -817,7 +817,6 @@ class Issuer(Origin):
                     await self.wallet.close()
                     # TODO comment out pending review
                     # await self.wallet.remove()
-                    # TODO wallet open without full parameter set
                     self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_type, wallet_cfg, wallet_creds)
                     await self.wallet.open()
 

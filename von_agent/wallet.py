@@ -238,9 +238,10 @@ class Wallet:
         logger.debug('Wallet.close: >>>')
 
         await wallet.close_wallet(self.handle)
-        auto_remove = self.cfg.get('auto-remove', False)
-        if auto_remove:
-            await self.remove()
+        # TODO throws an exception
+        # auto_remove = self.cfg.get('auto-remove', False)
+        #if auto_remove:
+        #    await self.remove()
 
         logger.debug('Wallet.close: <<<')
 

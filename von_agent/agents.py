@@ -811,11 +811,14 @@ class Issuer(Origin):
                     seed = self.wallet._seed
                     wallet_name = self.wallet.name
                     wallet_cfg = self.wallet.cfg
+                    wallet_xtype = self.wallet.xtype
+                    wallet_creds = self.wallet.creds
+
                     await self.wallet.close()
                     # TODO comment out pending review
                     # await self.wallet.remove()
                     # TODO wallet open without full parameter set
-                    self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_cfg)
+                    self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_type, wallet_cfg, wallet_creds)
                     await self.wallet.open()
 
                     return await self.send_claim_def(schema_json)
@@ -1385,9 +1388,14 @@ class HolderProver(_BaseAgent):
         seed = self.wallet._seed
         wallet_name = self.wallet.name
         wallet_cfg = self.wallet.cfg
+        wallet_xtype = self.wallet.xtype
+        wallet_creds = self.wallet.creds
+
         await self.wallet.close()
-        await self.wallet.remove()
-        self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_cfg)
+        # TODO comment out pending review
+        # await self.wallet.remove()
+        # TODO wallet open without full parameter set
+        self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_type, wallet_cfg, wallet_creds)
         await self.wallet.open()
 
         await self.create_master_secret(self._master_secret)  # carry over master secret to new wallet

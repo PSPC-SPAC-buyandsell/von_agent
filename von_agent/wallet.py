@@ -110,7 +110,7 @@ class Wallet:
         return self._cfg
 
     @property
-    def creds(self) -> str:
+    def creds(self) -> dict:
         """
         Accessor for wallet credentials 
 
@@ -182,6 +182,7 @@ class Wallet:
         cfg = json.loads(json.dumps(self._cfg))  # deep copy
         if 'auto-remove' in cfg:
             cfg.pop('auto-remove')
+        creds = json.loads(json.dumps(self._creds))
 
         try:
             await wallet.create_wallet(
@@ -198,7 +199,7 @@ class Wallet:
                 logger.debug('Wallet.open: <!< indy error code {}'.format(self.e.error_code))
                 raise
 
-        self._handle = await wallet.open_wallet(self.name, json.dumps(cfg) if cfg else None, None)
+        self._handle = await wallet.open_wallet(self.name, json.dumps(cfg) if cfg else None, json.dumps(creds) if creds else None)
         logger.info('Opened wallet {} on handle {}'.format(self.name, self.handle))
 
         (self._did, self._verkey) = await did.create_and_store_my_did(  # apparently does no harm to overwrite it

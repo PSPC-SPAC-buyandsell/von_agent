@@ -57,10 +57,10 @@ class Wallet:
         self._name = name
         self._handle = None
         self._xtype = wallet_type
-        self._cfg = cfg or {}
+        self._cfg = cfg 
         # TODO will depend on the specific wallet type
         # validate_config('wallet', self._cfg)
-        self._creds = creds or {}
+        self._creds = creds 
         # TODO will depend on the specific wallet type
         # validate_config('credentials', self._creds)
 

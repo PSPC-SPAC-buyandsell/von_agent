@@ -804,7 +804,7 @@ class Issuer(Origin):
                         schema['data']['name'],
                         schema['data']['version']))
                 else:
-                    logger.warn(
+                    logger.error(
                         'Issuer wallet has claim def on schema {} version {} not on ledger: resetting wallet'.format(
                             schema['data']['name'],
                             schema['data']['version']))
@@ -812,7 +812,8 @@ class Issuer(Origin):
                     wallet_name = self.wallet.name
                     wallet_cfg = self.wallet.cfg
                     await self.wallet.close()
-                    await self.wallet.remove()
+                    # TODO comment out pending review
+                    # await self.wallet.remove()
                     # TODO wallet open without full parameter set
                     self._wallet = Wallet(self.pool.name, seed, wallet_name, wallet_cfg)
                     await self.wallet.open()

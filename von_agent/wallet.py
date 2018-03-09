@@ -56,7 +56,7 @@ class Wallet:
         self._seed = seed
         self._name = name
         self._handle = None
-        self._type = wallet_type
+        self._xtype = wallet_type
         self._cfg = cfg or {}
         # TODO will depend on the specific wallet type
         # validate_config('wallet', self._cfg)
@@ -120,14 +120,14 @@ class Wallet:
         return self._creds
 
     @property
-    def type(self) -> str:
+    def xtype(self) -> str:
         """
         Accessor for wallet type
 
         :return: wallet type
         """
 
-        return self._type
+        return self._xtype
 
     @property
     def did(self) -> str:
@@ -187,7 +187,7 @@ class Wallet:
             await wallet.create_wallet(
                 pool_name=self.pool_name,
                 name=self.name,
-                xtype=self.type,
+                xtype=self.xtype,
                 config=json.dumps(cfg) if cfg else None,
                 credentials=json.dumps(creds) if creds else None)
             logger.info('Created wallet {} on handle {}'.format(self.name, self.handle))

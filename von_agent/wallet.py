@@ -255,7 +255,7 @@ class Wallet:
 
         try:
             logger.debug('Wallet.remove: >>>  removing wallet ')
-            await wallet.delete_wallet(self.name, None)
+            # await wallet.delete_wallet(self.name, None)
         except Exception:
             logger.info('Abstaining from wallet removal: {}'.format(sys.exc_info()[0]))
 

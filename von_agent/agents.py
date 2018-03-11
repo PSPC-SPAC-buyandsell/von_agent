@@ -1156,10 +1156,11 @@ class HolderProver(_BaseAgent):
             logger.debug('HolderProver.create_proof: <!< master secret not set')
             raise AbsentMasterSecret('Master secret is not set')
 
-        x_uuids = [attr_uuid for attr_uuid in claims['attrs'] if len(claims['attrs'][attr_uuid]) != 1]
-        if x_uuids:
-            logger.debug('HolderProver.create_proof: <!< claims specification out of focus (non-uniqueness)')
-            raise ClaimsFocus('Proof request requires unique claims per attribute; violators: {}'.format(x_uuids))
+        # TODO this is barfing even on good data - try passing claims through and see what happens
+        # x_uuids = [attr_uuid for attr_uuid in claims['attrs'] if len(claims['attrs'][attr_uuid]) != 1]
+        # if x_uuids:
+        #     logger.debug('HolderProver.create_proof: <!< claims specification out of focus (non-uniqueness)')
+        #     raise ClaimsFocus('Proof request requires unique claims per attribute; violators: {}'.format(x_uuids))
 
         referent2schema = {}
         referent2claim_def = {}

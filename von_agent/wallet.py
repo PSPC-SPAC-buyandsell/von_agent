@@ -195,10 +195,10 @@ class Wallet:
             logger.info('Created wallet {} on handle {}'.format(self.name, self.handle))
 
             # only try to create the DID if we had to create the wallet (otherwise the DID is already there)
-            (self._did, self._verkey) = await did.create_and_store_my_did(  # apparently does no harm to overwrite it
-                self._handle,
-                json.dumps({'seed': self._seed}))
-            logger.debug('Wallet.open: stored {}, {}'.format(self._did, self._verkey))
+            # (self._did, self._verkey) = await did.create_and_store_my_did(  # apparently does no harm to overwrite it
+            #     self._handle,
+            #     json.dumps({'seed': self._seed}))
+            # logger.debug('Wallet.open: stored {}, {}'.format(self._did, self._verkey))
         except IndyError as e:
             if e.error_code == ErrorCode.WalletAlreadyExistsError:
                 logger.info('Opening existing wallet: {}'.format(self.name))
@@ -208,6 +208,11 @@ class Wallet:
 
         self._handle = await wallet.open_wallet(self.name, json.dumps(cfg) if cfg else None, json.dumps(creds) if creds else None)
         logger.info('Opened wallet {} on handle {}'.format(self.name, self.handle))
+
+        (self._did, self._verkey) = await did.create_and_store_my_did(  # apparently does no harm to overwrite it
+            self._handle,
+            json.dumps({'seed': self._seed}))
+        logger.debug('Wallet.open: stored {}, {}'.format(self._did, self._verkey))
 
         logger.debug('Wallet.open: <<<')
         return self

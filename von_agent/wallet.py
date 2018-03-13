@@ -16,18 +16,22 @@ limitations under the License.
 
 from indy import did, wallet
 from indy.error import IndyError, ErrorCode
-from von_agent.validate_config import validate_config
-
 import json
 import logging
-
 
 class Wallet:
     """
     Class encapsulating indy-sdk wallet.
     """
 
-    def __init__(self, pool_name: str, seed: str, name: str, wallet_type: str = None, cfg: dict = None, creds: dict = None) -> None:
+    def __init__(
+            self,
+            pool_name: str,
+            seed: str,
+            name: str,
+            wallet_type: str = None,
+            cfg: dict = None,
+            creds: dict = None) -> None:
         """
         Initializer for wallet. Store input parameters and create wallet.
         Does not open until open() or __enter__().
@@ -36,8 +40,8 @@ class Wallet:
         :param seed: seed for wallet user
         :param name: name of the wallet
         :param wallet_type: wallet type str, None for default
-        :param cfg: wallet configuration dict, None for default
-            e.g., {
+        :param cfg: configuration dict, None for default
+            i.e., {
                 'auto-remove': bool (default False), whether to remove serialized indy configuration data on close,
                 ... (any other indy configuration data)
             }
@@ -57,13 +61,8 @@ class Wallet:
         self._name = name
         self._handle = None
         self._xtype = wallet_type
-        self._cfg = cfg 
-        # TODO will depend on the specific wallet type
-        # validate_config('wallet', self._cfg)
-        self._creds = creds 
-        # TODO will depend on the specific wallet type
-        # validate_config('credentials', self._creds)
-
+        self._cfg = cfg or {}
+        self._creds = creds or None
         self._did = None
         self._verkey = None
 
@@ -112,9 +111,9 @@ class Wallet:
     @property
     def creds(self) -> dict:
         """
-        Accessor for wallet credentials 
+        Accessor for wallet credentials.
 
-        :return: wallet credentials 
+        :return: wallet credentials
         """
 
         return self._creds
@@ -192,7 +191,7 @@ class Wallet:
                 name=self.name,
                 xtype=self.xtype,
                 config=json.dumps(cfg) if cfg else None,
-                credentials=json.dumps(creds) if creds else None)
+                credentials=json.dumps(self.creds) if self.creds else None)
             logger.info('Created wallet {} on handle {}'.format(self.name, self.handle))
         except IndyError as e:
             if e.error_code == ErrorCode.WalletAlreadyExistsError:
@@ -201,7 +200,10 @@ class Wallet:
                 logger.debug('Wallet.open: <!< indy error code {}'.format(self.e.error_code))
                 raise
 
-        self._handle = await wallet.open_wallet(self.name, json.dumps(cfg) if cfg else None, json.dumps(creds) if creds else None)
+        self._handle = await wallet.open_wallet(
+            self.name,
+            json.dumps(cfg) if cfg else None,
+            json.dumps(self.creds) if self.creds else None)
         logger.info('Opened wallet {} on handle {}'.format(self.name, self.handle))
 
         (self._did, self._verkey) = await did.create_and_store_my_did(  # apparently does no harm to overwrite it
@@ -261,7 +263,7 @@ class Wallet:
         except Exception:
             logger.info('Abstaining from wallet removal: {}'.format(sys.exc_info()[0]))
 
-        logger.debug('Wallet.close: <<<')
+        logger.debug('Wallet.remove: <<<')
 
     def __repr__(self) -> str:
         """

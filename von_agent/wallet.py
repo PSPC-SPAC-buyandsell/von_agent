@@ -185,6 +185,8 @@ class Wallet:
         #     cfg.pop('auto-remove')
         creds = json.loads(json.dumps(self._creds))
 
+        logger.debug('cfg: {}; creds: {}'.format(json.dumps(cfg), json.dumps(creds)))
+
         try:
             await wallet.create_wallet(
                 pool_name=self.pool_name,

@@ -203,7 +203,7 @@ class Wallet:
             if e.error_code == ErrorCode.WalletAlreadyExistsError:
                 logger.info('Opening existing wallet: {}'.format(self.name))
             else:
-                logger.debug('Wallet.open: <!< indy error code {}'.format(self.e.error_code))
+                logger.debug('Wallet.open: <!< indy error code {}'.format(e.error_code))
                 raise
 
         self._handle = await wallet.open_wallet(self.name, json.dumps(cfg) if cfg else None, json.dumps(creds) if creds else None)

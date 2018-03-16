@@ -155,9 +155,14 @@ class NodePool:
         logger = logging.getLogger(__name__)
         logger.debug('NodePool.close: >>>')
 
-        await pool.close_pool_ledger(self.handle)
-        if self._cfg and 'auto-remove' in self._cfg and self._cfg['auto-remove']:
-            await pool.delete_pool_ledger_config(self.name)
+        if not self.handle:
+            logger.warn('Abstaining from closing pool {}: already closed'.format(self.name))
+        else:
+            await pool.close_pool_ledger(self.handle)
+            if self._cfg and 'auto-remove' in self._cfg and self._cfg['auto-remove']:
+                await pool.delete_pool_ledger_config(self.name)
+
+        self._handle = None
 
         logger.debug('NodePool.close: <<<')
 

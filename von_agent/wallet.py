@@ -212,6 +212,9 @@ class Wallet:
         logger = logging.getLogger(__name__)
         logger.debug('Wallet.__aenter__: >>>')
 
+        if not self.created:
+            raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
+
         rv = await self.open()
         logger.debug('Wallet.__aenter__: <<<')
         return rv

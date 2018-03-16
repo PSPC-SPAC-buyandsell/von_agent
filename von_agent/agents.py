@@ -61,8 +61,9 @@ class _AgentCore:
 
         self._pool = pool
         self._wallet = wallet
-        if not self.wallet.created:
-            raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
+        # TODO defer this to wallet open - it messes up the Agent logic in Permitify and TheOrgBook
+        # if not self.wallet.created:
+        #     raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
 
         self._schema_store = SchemaStore()
 

@@ -211,6 +211,8 @@ class Wallet:
         logger = logging.getLogger(__name__)
         logger.debug('Wallet.create: >>>')
 
+        logger.debug('cfg: {}; creds: {}'.format(json.dumps(cfg), json.dumps(creds)))
+
         try:
             await wallet.create_wallet(
                 pool_name=self.pool_name,
@@ -220,6 +222,12 @@ class Wallet:
                 credentials=json.dumps(self.creds) if self.creds else None)
             self._created = True
             logger.info('Created wallet {} on handle {}'.format(self.name, self.handle))
+
+            # only try to create the DID if we had to create the wallet (otherwise the DID is already there)
+            # (self._did, self._verkey) = await did.create_and_store_my_did(  # apparently does no harm to overwrite it
+            #     self._handle,
+            #     json.dumps({'seed': self._seed}))
+            # logger.debug('Wallet.open: stored {}, {}'.format(self._did, self._verkey))
         except IndyError as e:
             if e.error_code == ErrorCode.WalletAlreadyExistsError:
                 self._created = True
@@ -323,7 +331,7 @@ class Wallet:
 
         try:
             logger.debug('Wallet.remove: >>>  removing wallet ')
-            await wallet.delete_wallet(self.name, None)
+            # await wallet.delete_wallet(self.name, None)
         except Exception:
             logger.info('Abstaining from wallet removal: {}'.format(sys.exc_info()[0]))
 

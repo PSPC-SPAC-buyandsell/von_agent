@@ -59,8 +59,9 @@ class _AgentCore:
         logger.debug('_AgentCore.__init__: >>> wallet: {}'.format(wallet))
 
         self._wallet = wallet
-        if not self.wallet.created:
-            raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
+        # TODO defer this to wallet open - it messes up the Agent logic in Permitify and TheOrgBook
+        # if not self.wallet.created:
+        #     raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
 
         self._schema_store = SchemaStore()
 
@@ -808,14 +809,14 @@ class Issuer(Origin):
                         schema['data']['name'],
                         schema['data']['version']))
                 else:
-                    logger.debug('Issuer.send_claim_def: <!< corrupt wallet {}'.format(self.wallet.name))
+                    logger.error('Issuer.send_claim_def: <!< corrupt wallet {}'.format(self.wallet.name))
                     raise CorruptWallet(
                         'Corrupt Issuer wallet ({}) has claim def on schema {} version {} not on ledger'.format(
                             self.wallet.name,
                             schema['data']['name'],
                             schema['data']['version']))
             else:
-                logger.debug(
+                logger.error(
                     'Issuer.send_claim_def: <!< cannot store claim def in wallet {}: indy error code {}'.format(
                         self.name,
                         self.e.error_code))

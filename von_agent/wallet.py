@@ -146,7 +146,7 @@ class Wallet:
         return self._creds
 
     @property
-    def xtype(self) -> dict:
+    def xtype(self) -> str:
         """
         Accessor for wallet type.
 
@@ -219,6 +219,9 @@ class Wallet:
         logger = logging.getLogger(__name__)
         logger.debug('Wallet.__aenter__: >>>')
 
+        if not self.created:
+            raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
+
         rv = await self.open()
         logger.debug('Wallet.__aenter__: <<<')
         return rv
@@ -271,8 +274,14 @@ class Wallet:
             logger.debug('Wallet {} stored new DID {}, verkey {} from seed'.format(self.name, self.did, self.verkey))
         else:
             self._created = True
+            # TODO this should call did.list_my_dids_with_meta(wallet_handle: int) -> str to get existing did
+            # see https://github.com/ianco/indy-sdk/blob/master/wrappers/python/tests/did/test_list_my_dids_with_meta.py
+            # res_json = await did.list_my_dids_with_meta(wallet_handle)
+            # res = json.loads(res_json)
+            # my_did = res[0]["did"]
             self._did = await self._seed2did()
             self._verkey = await did.key_for_did(self.pool.handle, self.handle, self.did)
+            # ODOT
             logger.info('Wallet {} got verkey {} for existing DID {}'.format(self.name, self.verkey, self.did))
 
         await wallet.close_wallet(self.handle)

@@ -830,7 +830,7 @@ class Issuer(Origin):
             else:
                 logger.error(
                     'Issuer.send_claim_def: <!< cannot store claim def in wallet {}: indy error code {}'.format(
-                        self.name,
+                        self.wallet.name,
                         self.e.error_code))
                 raise
 
@@ -1008,7 +1008,7 @@ class HolderProver(_BaseAgent):
             else:
                 logger.debug(   
                     'HolderProver.create_master_secret: <<<  cannot create master secret {}, indy error code {}'.format(
-                        self.name,
+                        self.wallet.name,
                         self.e.error_code))
                 raise
 

@@ -1168,9 +1168,9 @@ class HolderProver(_BaseAgent):
             raise ClaimsFocus('Proof request requires unique claims per attribute; violators: {}'.format(x_uuids))
 
         referent2schema = {}
-        referent2schema_cache: dict ={}
+        referent2schema_cache = dict()
         referent2claim_def = {}
-        referent2claim_def_cache: dict = {}
+        referent2claim_def_cache = dict()
         for attr_uuid in claims['attrs']:
             logger.warn('HolderProver.create_proof: <<< get schema for {} {}'.format(attr_uuid, claims['attrs'][attr_uuid][0]['issuer_did']))
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])

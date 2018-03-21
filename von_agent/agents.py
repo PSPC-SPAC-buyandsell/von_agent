@@ -1153,7 +1153,7 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('HolderProver.create_proof: >>> proof_req: {}, claims: {}, requested_claims: {}'.format(
+        logger.warn('HolderProver.create_proof: >>> proof_req: {}, claims: {}, requested_claims: {}'.format(
                 proof_req,
                 claims,
                 requested_claims))
@@ -1170,9 +1170,10 @@ class HolderProver(_BaseAgent):
         referent2schema = {}
         referent2claim_def = {}
         for attr_uuid in claims['attrs']:
-            logger.warn('HolderProver.create_proof: <<< get schema for {}'.format(attr_uuid))
+            logger.warn('HolderProver.create_proof: <<< get schema for {} {}'.format(attr_uuid, claims['attrs'][attr_uuid][0]['issuer_did']))
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])
             schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema store
+            logger.warn('HolderProver.create_proof: <<< GOT schema for {} {}'.format(s_key, json.dumps(schema))
             referent2schema[claims['attrs'][attr_uuid][0]['referent']] = schema
             referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = (
                 json.loads(await self.get_claim_def(

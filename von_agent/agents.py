@@ -1178,6 +1178,7 @@ class HolderProver(_BaseAgent):
                     schema['seqNo'],
                     claims['attrs'][attr_uuid][0]['issuer_did'])))
 
+        logger.debug('HolderProver.create_proof: <<< start')
         rv = await anoncreds.prover_create_proof(
             self.wallet.handle,
             json.dumps(proof_req),

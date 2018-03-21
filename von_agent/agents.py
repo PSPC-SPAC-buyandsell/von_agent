@@ -1170,6 +1170,7 @@ class HolderProver(_BaseAgent):
         referent2schema = {}
         referent2claim_def = {}
         for attr_uuid in claims['attrs']:
+            logger.warn('HolderProver.create_proof: <<< get schema for {}'.format(attr_uuid))
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])
             schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema store
             referent2schema[claims['attrs'][attr_uuid][0]['referent']] = schema
@@ -1177,6 +1178,7 @@ class HolderProver(_BaseAgent):
                 json.loads(await self.get_claim_def(
                     schema['seqNo'],
                     claims['attrs'][attr_uuid][0]['issuer_did'])))
+            logger.warn('HolderProver.create_proof: <<< GOT IT schema for {}'.format(attr_uuid))
 
         logger.warn('HolderProver.create_proof: <<< start')
         rv = await anoncreds.prover_create_proof(

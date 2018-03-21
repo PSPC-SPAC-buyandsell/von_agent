@@ -960,6 +960,7 @@ class Issuer(Origin):
         logger.debug('Issuer.process_post: <!< not this form type: {}'.format(form['type']))
         raise TokenType('{} does not support token type {}'.format(self.__class__.__name__, form['type']))
 
+my_schema_cache = dict()
 
 class HolderProver(_BaseAgent):
     """
@@ -1045,11 +1046,16 @@ class HolderProver(_BaseAgent):
         start_time = time()
 
         schema_seq_no = json.loads(claim_def_json)['ref']  # = schema seq no in claim def
-        await self.get_schema(schema_seq_no)  # update schema store if need be
+        if schema_seq_no in my_schema_cache:
+            s_key = my_schema_cache[schema_seq_no]
+        else:
+            await self.get_schema(schema_seq_no)  # update schema store if need be
+            s_key = self._schema_store.schema_key_for(schema_seq_no)
+            my_schema_cache[schema_seq_no] = s_key
         elapsed_time = time() - start_time
         logger.warn('get schema step elapsed time = {}'.format(elapsed_time))
         start_time = time()
-        s_key = self._schema_store.schema_key_for(schema_seq_no)
+        
         rv = await anoncreds.prover_create_and_store_claim_req(
             self.wallet.handle,
             self.did,

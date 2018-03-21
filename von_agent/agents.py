@@ -1181,15 +1181,16 @@ class HolderProver(_BaseAgent):
                 referent2schema_cache[s_key] = schema
             logger.warn('HolderProver.create_proof: <<< GOT schema for {} {}'.format(s_key, json.dumps(schema)))
             referent2schema[claims['attrs'][attr_uuid][0]['referent']] = schema
-            def_key = schema['seqNo'] + ":" + claims['attrs'][attr_uuid][0]['issuer_did']
+            def_key = str(schema['seqNo']) + ":" + claims['attrs'][attr_uuid][0]['issuer_did']
             if def_key in referent2claim_def_cache:
-                referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = referent2claim_def_cache[def_key]
+                claim_def = referent2claim_def_cache[def_key]
             else:
-                referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = (
+                claim_def = (
                     json.loads(await self.get_claim_def(
                         schema['seqNo'],
                         claims['attrs'][attr_uuid][0]['issuer_did'])))
-                referent2claim_def_cache[def_key] = referent2claim_def[claims['attrs'][attr_uuid][0]['referent']]
+                referent2claim_def_cache[def_key] = claim_def
+            referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = claim_def
             logger.warn('HolderProver.create_proof: <<< GOT IT schema for {}'.format(attr_uuid))
 
         logger.warn('HolderProver.create_proof: <<< start')

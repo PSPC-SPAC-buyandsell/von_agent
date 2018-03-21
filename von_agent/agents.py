@@ -1030,6 +1030,7 @@ class HolderProver(_BaseAgent):
         logger.warn('HolderProver.store_claim_req: >>> claim_offer_json: {}, claim_def_json: {}'.format(
             claim_offer_json,
             claim_def_json))
+        start_time = time.time()
 
         if self._master_secret is None:
             logger.debug('HolderProver.store_claim_req: <!< master secret not set')
@@ -1039,8 +1040,15 @@ class HolderProver(_BaseAgent):
             self.wallet.handle,
             claim_offer_json)
 
+        elapsed_time = time.time() - start_time
+        logger.warn('prover_store_claim_offer step elapsed time = {}'.format(elapsed_time))
+        start_time = time.time()
+
         schema_seq_no = json.loads(claim_def_json)['ref']  # = schema seq no in claim def
         await self.get_schema(schema_seq_no)  # update schema store if need be
+        elapsed_time = time.time() - start_time
+        logger.warn('get schema step elapsed time = {}'.format(elapsed_time))
+        start_time = time.time()
         s_key = self._schema_store.schema_key_for(schema_seq_no)
         rv = await anoncreds.prover_create_and_store_claim_req(
             self.wallet.handle,
@@ -1048,6 +1056,9 @@ class HolderProver(_BaseAgent):
             claim_offer_json,
             claim_def_json,
             self._master_secret)
+
+        elapsed_time = time.time() - start_time
+        logger.warn('prover_create_and_store_claim_req step elapsed time = {}'.format(elapsed_time))
 
         logger.warn('HolderProver.store_claim_req: <<< {}'.format(rv))
         return rv

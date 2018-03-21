@@ -1027,7 +1027,7 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('HolderProver.store_claim_req: >>> claim_offer_json: {}, claim_def_json: {}'.format(
+        logger.warn('HolderProver.store_claim_req: >>> claim_offer_json: {}, claim_def_json: {}'.format(
             claim_offer_json,
             claim_def_json))
 
@@ -1049,7 +1049,7 @@ class HolderProver(_BaseAgent):
             claim_def_json,
             self._master_secret)
 
-        logger.debug('HolderProver.store_claim_req: <<< {}'.format(rv))
+        logger.warn('HolderProver.store_claim_req: <<< {}'.format(rv))
         return rv
 
     async def store_claim(self, claim_json: str) -> None:
@@ -1060,13 +1060,13 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('HolderProver.store_claim: >>> claim_json: {}'.format(claim_json))
+        logger.warn('HolderProver.store_claim: >>> claim_json: {}'.format(claim_json))
 
         await anoncreds.prover_store_claim(
             self.wallet.handle,
             claim_json,
             None)  # rev_reg_json - TODO: revocation
-        logger.debug('HolderProver.store_claim: <<<')
+        logger.warn('HolderProver.store_claim: <<<')
 
     async def create_proof(self, proof_req: dict, claims: dict, requested_claims: dict = None) -> str:
         """

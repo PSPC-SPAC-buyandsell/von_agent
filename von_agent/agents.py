@@ -1178,7 +1178,7 @@ class HolderProver(_BaseAgent):
                     schema['seqNo'],
                     claims['attrs'][attr_uuid][0]['issuer_did'])))
 
-        logger.debug('HolderProver.create_proof: <<< start')
+        logger.warn('HolderProver.create_proof: <<< start')
         rv = await anoncreds.prover_create_proof(
             self.wallet.handle,
             json.dumps(proof_req),
@@ -1187,7 +1187,7 @@ class HolderProver(_BaseAgent):
             self._master_secret,
             json.dumps(referent2claim_def),
             json.dumps({}))  # revoc_regs_json
-        logger.debug('HolderProver.create_proof: <<< {}'.format(rv))
+        logger.warn('HolderProver.create_proof: <<< {}'.format(rv))
         return rv
 
     async def get_claims(self, proof_req_json: str, filt: dict = {}) -> (Set[str], str):

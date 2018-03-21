@@ -1153,7 +1153,7 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.warn('HolderProver.create_proof: >>> proof_req: {}, claims: {}, requested_claims: {}'.format(
+        logger.debug('HolderProver.create_proof: >>> proof_req: {}, claims: {}, requested_claims: {}'.format(
                 proof_req,
                 claims,
                 requested_claims))
@@ -1172,14 +1172,14 @@ class HolderProver(_BaseAgent):
         referent2claim_def = {}
         referent2claim_def_cache = dict()
         for attr_uuid in claims['attrs']:
-            logger.warn('HolderProver.create_proof: <<< get schema for {} {}'.format(attr_uuid, claims['attrs'][attr_uuid][0]['issuer_did']))
+            # logger.warn('HolderProver.create_proof: <<< get schema for {} {}'.format(attr_uuid, claims['attrs'][attr_uuid][0]['issuer_did']))
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])
             if s_key in referent2schema_cache:
                 schema = referent2schema_cache[s_key]
             else:
                 schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema store
                 referent2schema_cache[s_key] = schema
-            logger.warn('HolderProver.create_proof: <<< GOT schema for {} {}'.format(s_key, json.dumps(schema)))
+            # logger.warn('HolderProver.create_proof: <<< GOT schema for {} {}'.format(s_key, json.dumps(schema)))
             referent2schema[claims['attrs'][attr_uuid][0]['referent']] = schema
             def_key = str(schema['seqNo']) + ":" + claims['attrs'][attr_uuid][0]['issuer_did']
             if def_key in referent2claim_def_cache:
@@ -1191,9 +1191,9 @@ class HolderProver(_BaseAgent):
                         claims['attrs'][attr_uuid][0]['issuer_did'])))
                 referent2claim_def_cache[def_key] = claim_def
             referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = claim_def
-            logger.warn('HolderProver.create_proof: <<< GOT IT schema for {}'.format(attr_uuid))
+            # logger.warn('HolderProver.create_proof: <<< GOT IT schema for {}'.format(attr_uuid))
 
-        logger.warn('HolderProver.create_proof: <<< start')
+        logger.debug('HolderProver.create_proof: <<< start')
         rv = await anoncreds.prover_create_proof(
             self.wallet.handle,
             json.dumps(proof_req),
@@ -1202,7 +1202,7 @@ class HolderProver(_BaseAgent):
             self._master_secret,
             json.dumps(referent2claim_def),
             json.dumps({}))  # revoc_regs_json
-        logger.warn('HolderProver.create_proof: <<< {}'.format(rv))
+        logger.debug('HolderProver.create_proof: <<< {}'.format(rv))
         return rv
 
     async def get_claims(self, proof_req_json: str, filt: dict = {}) -> (Set[str], str):

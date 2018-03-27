@@ -238,46 +238,46 @@ class _AgentCore:
         logger.debug('_AgentCore.get_schema: >>> index: {}'.format(index))
 
         rv = json.dumps({})
-        with schema_cache_lock:
-            if schema_cache.contains(index):
-                logger.info('_AgentCore.get_schema: got schema {} from schema cache'.format(index))
-                rv = schema_cache[index]
-                logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
-                return json.dumps(rv)
+        # with schema_cache_lock:
+        if schema_cache.contains(index):
+            logger.info('_AgentCore.get_schema: got schema {} from schema cache'.format(index))
+            rv = schema_cache[index]
+            logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
+            return json.dumps(rv)
 
-            if isinstance(index, SchemaKey):
-                req_json = await ledger.build_get_schema_request(
-                    self.did,
-                    index.origin_did,
-                    json.dumps({'name': index.name, 'version': index.version}))
-                resp_json = await ledger.submit_request(self.pool.handle, req_json)
-                await asyncio.sleep(0)
+        if isinstance(index, SchemaKey):
+            req_json = await ledger.build_get_schema_request(
+                self.did,
+                index.origin_did,
+                json.dumps({'name': index.name, 'version': index.version}))
+            resp_json = await ledger.submit_request(self.pool.handle, req_json)
+            await asyncio.sleep(0)
 
-                resp = json.loads(resp_json)
-                if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
-                    logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
+            resp = json.loads(resp_json)
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+                logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
+            else:
+                schema = resp['result']
+                data_json = schema['data']  # response result data is double-encoded on the ledger
+                if data_json and 'attr_names' in data_json:
+                    schema_cache[index] = schema  # schema cache indexes by both txn# and schema key en passant
+                    rv = json.dumps(schema)
                 else:
-                    schema = resp['result']
-                    data_json = schema['data']  # response result data is double-encoded on the ledger
-                    if data_json and 'attr_names' in data_json:
-                        schema_cache[index] = schema  # schema cache indexes by both txn# and schema key en passant
-                        rv = json.dumps(schema)
-                    else:
-                        logger.info('_AgentCore.get_schema: ledger query returned response with no data')
+                    logger.info('_AgentCore.get_schema: ledger query returned response with no data')
 
-            elif isinstance(index, int):
-                req_json = await ledger.build_get_txn_request(self.did, index)
-                resp = json.loads(await ledger.submit_request(self.pool.handle, req_json))
-                await asyncio.sleep(0)
+        elif isinstance(index, int):
+            req_json = await ledger.build_get_txn_request(self.did, index)
+            resp = json.loads(await ledger.submit_request(self.pool.handle, req_json))
+            await asyncio.sleep(0)
 
-                if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
-                    logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
-                elif resp['result']['data'] and (resp['result']['data']['type'] == '101'):  # type '101' == schema
-                    # getting it as a transaction misses the 'dest' field: look it up from schema key data
-                    rv = await self.get_schema(SchemaKey(
-                        resp['result']['data']['identifier'],
-                        resp['result']['data']['data']['name'],
-                        resp['result']['data']['data']['version']))
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+                logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
+            elif resp['result']['data'] and (resp['result']['data']['type'] == '101'):  # type '101' == schema
+                # getting it as a transaction misses the 'dest' field: look it up from schema key data
+                rv = await self.get_schema(SchemaKey(
+                    resp['result']['data']['identifier'],
+                    resp['result']['data']['data']['name'],
+                    resp['result']['data']['data']['version']))
 
         logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
         return rv
@@ -414,35 +414,35 @@ class _BaseAgent(_AgentCore):
             issuer_did))
 
         rv = json.dumps({})
-        with claim_def_cache_lock:
-            if (schema_seq_no, issuer_did) in claim_def_cache:
-                logger.info('_BaseAgent.get_claim_def: got claim def for schema ({}, {}) from claim def cache'.format(
-                    schema_seq_no,
-                    issuer_did))
-                rv = claim_def_cache[(schema_seq_no, issuer_did)]
-                logger.debug('_BaseAgent.get_claim_def: <<< {}'.format(rv))
-                return json.dumps(rv)
-
-            req_json = await ledger.build_get_claim_def_txn(
-                self.did,
+        # with claim_def_cache_lock:
+        if (schema_seq_no, issuer_did) in claim_def_cache:
+            logger.info('_BaseAgent.get_claim_def: got claim def for schema ({}, {}) from claim def cache'.format(
                 schema_seq_no,
-                'CL',
-                issuer_did)
+                issuer_did))
+            rv = claim_def_cache[(schema_seq_no, issuer_did)]
+            logger.debug('_BaseAgent.get_claim_def: <<< {}'.format(rv))
+            return json.dumps(rv)
 
-            resp_json = await ledger.submit_request(self.pool.handle, req_json)
-            await asyncio.sleep(0)
+        req_json = await ledger.build_get_claim_def_txn(
+            self.did,
+            schema_seq_no,
+            'CL',
+            issuer_did)
 
-            resp = json.loads(resp_json)
-            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
-                logger.error('_BaseAgent.get_claim_def: {}'.format(resp['reason']))
-            elif 'result' in resp and 'data' in resp['result'] and resp['result']['data']:
-                data = resp['result']['data']
-                if 'revocation' in data and data['revocation'] is not None:
-                    resp['result']['data']['revocation'] = None  #TODO: support revocation
-                claim_def_cache[(schema_seq_no, issuer_did)] = resp['result']  # update claim def cache
-                rv = json.dumps(resp['result'])
-            else:
-                logger.info('_BaseAgent.get_claim_def: ledger query returned response with no data')
+        resp_json = await ledger.submit_request(self.pool.handle, req_json)
+        await asyncio.sleep(0)
+
+        resp = json.loads(resp_json)
+        if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+            logger.error('_BaseAgent.get_claim_def: {}'.format(resp['reason']))
+        elif 'result' in resp and 'data' in resp['result'] and resp['result']['data']:
+            data = resp['result']['data']
+            if 'revocation' in data and data['revocation'] is not None:
+                resp['result']['data']['revocation'] = None  #TODO: support revocation
+            claim_def_cache[(schema_seq_no, issuer_did)] = resp['result']  # update claim def cache
+            rv = json.dumps(resp['result'])
+        else:
+            logger.info('_BaseAgent.get_claim_def: ledger query returned response with no data')
 
         logger.debug('_BaseAgent.get_claim_def: <<< {}'.format(rv))
         return rv

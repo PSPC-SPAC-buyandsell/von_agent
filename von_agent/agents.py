@@ -354,7 +354,7 @@ class _BaseAgent(_AgentCore):
         super().__init__(wallet)
 
         self._cfg = cfg or {}
-        validate_config('agent', self._cfg)
+        # validate_config('agent', self._cfg)
 
         self._claim_def_store = {}
 

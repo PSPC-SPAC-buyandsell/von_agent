@@ -17,9 +17,10 @@ limitations under the License.
 from indy import anoncreds, ledger
 from indy.error import IndyError, ErrorCode
 from requests import post, HTTPError
+from threading import Lock
 from time import time
 from typing import Set, Union
-
+from von_agent.cache import claim_def_cache, claim_def_cache_lock, schema_cache, schema_cache_lock
 from von_agent.error import (
     AbsentAttribute,
     AbsentMasterSecret,
@@ -30,7 +31,7 @@ from von_agent.error import (
     TokenType)
 from von_agent.nodepool import NodePool
 from von_agent.proto.validate import validate as validate_form
-from von_agent.schema import SchemaKey, SchemaStore, schema_key_for
+from von_agent.schemakey import SchemaKey, schema_key_for
 from von_agent.util import encode, decode, prune_claims_json, ppjson
 from von_agent.validate_config import CONFIG_JSON_SCHEMA, validate_config
 from von_agent.wallet import Wallet
@@ -46,26 +47,19 @@ class _AgentCore:
     Base class for agent implementing low-level functionality.
     """
 
-    def __init__(self, pool: NodePool, wallet: Wallet) -> None:
+    def __init__(self, wallet: Wallet) -> None:
         """
-        Initializer for agent. Retain node pool and wallet.
+        Initializer for agent. Retain wallet.
 
         Raise AbsentWallet if wallet is not yet created.
 
-        :param pool: node pool on which agent operates
         :param wallet: wallet for agent use
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('_AgentCore.__init__: >>> pool: {}, wallet: {}'.format(pool, wallet))
+        logger.debug('_AgentCore.__init__: >>> wallet: {}'.format(wallet))
 
-        self._pool = pool
         self._wallet = wallet
-        # TODO defer this to wallet open - it messes up the Agent logic in Permitify and TheOrgBook
-        # if not self.wallet.created:
-        #     raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
-
-        self._schema_store = SchemaStore()
 
         logger.debug('_AgentCore.__init__: <<<')
 
@@ -77,7 +71,7 @@ class _AgentCore:
         :return: node pool
         """
 
-        return self._pool
+        return self.wallet.pool
 
     @property
     def wallet(self) -> 'Wallet':
@@ -170,6 +164,39 @@ class _AgentCore:
 
         logger.debug('_AgentCore.close: <<<')
 
+    async def _sign_submit(self, req_json: str) -> str:
+        """
+        Sign and submit (json) request to ledger; return (json) result.
+
+        Raise CorruptWallet if existing wallet's pool is no longer extant,
+        or any other responsible indy-sdk exception on failure.
+
+        :param req_json: json of request to sign and submit
+        :return: json response
+        """
+
+        logger = logging.getLogger(__name__)
+        logger.debug('_AgentCore._sign_submit: >>> json: {}'.format(json))
+
+        try:
+            rv_json = await ledger.sign_and_submit_request(self.pool.handle, self.wallet.handle, self.did, req_json)
+            await asyncio.sleep(0)
+        except IndyError as e:
+            if e.error_code == ErrorCode.WalletIncompatiblePoolError:
+                logger.debug('_AgentCore._sign_submit: <!< Corrupt wallet {} is not compatible with pool {}'.format(
+                    self.wallet.name,
+                    self.pool.name))
+                raise CorruptWallet(
+                    'Corrupt wallet {} is not compatible with pool {}'.format(self.wallet.name, self.pool.name))
+            else:
+                logger.debug(   
+                    '_AgentCore._sign_submit: <!<  cannot sign request for ledger, indy error code {}'.format(
+                        self.wallet.name))
+                raise e
+
+        logger.debug('_AgentCore._sign_submit: <<< {}'.format(rv_json))
+        return rv_json
+
     async def get_nym(self, did: str) -> str:
         """
         Get json cryptonym (including current verification key) for input (agent) DID from ledger.
@@ -197,9 +224,10 @@ class _AgentCore:
 
     async def get_schema(self, index: Union[SchemaKey, int]) -> str:
         """
-        Get schema from ledger by origin DID, name, and version; return empty production {} for none.
+        Get schema from ledger by transaction number or schema key (origin DID, name, and version).
+        Return empty production {} for no such schema.
 
-        The operation retrieves the schema from the agent's schema store if it has it, and caches it
+        Retrieve the schema from the agent's schema cache if it has it; cache it
         en passant if it does not (and if there is a corresponding schema on the ledger).
 
         :param index: schema key (origin DID, name, version) or sequence number
@@ -210,46 +238,46 @@ class _AgentCore:
         logger.debug('_AgentCore.get_schema: >>> index: {}'.format(index))
 
         rv = json.dumps({})
+        # with schema_cache_lock:
+        if schema_cache.contains(index):
+            logger.info('_AgentCore.get_schema: got schema {} from schema cache'.format(index))
+            rv = schema_cache[index]
+            logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
+            return json.dumps(rv)
 
         if isinstance(index, SchemaKey):
-            if self._schema_store.contains(index):
-                rv = json.dumps(self._schema_store[index])
-            else:
-                req_json = await ledger.build_get_schema_request(
-                    self.did,
-                    index.origin_did,
-                    json.dumps({'name': index.name, 'version': index.version}))
-                resp_json = await ledger.submit_request(self.pool.handle, req_json)
-                await asyncio.sleep(0)
+            req_json = await ledger.build_get_schema_request(
+                self.did,
+                index.origin_did,
+                json.dumps({'name': index.name, 'version': index.version}))
+            resp_json = await ledger.submit_request(self.pool.handle, req_json)
+            await asyncio.sleep(0)
 
-                resp = json.loads(resp_json)
-                if ('op' in resp) and (resp['op'] == 'REQNACK'):
-                    logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
+            resp = json.loads(resp_json)
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+                logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
+            else:
+                schema = resp['result']
+                data_json = schema['data']  # response result data is double-encoded on the ledger
+                if data_json and 'attr_names' in data_json:
+                    schema_cache[index] = schema  # schema cache indexes by both txn# and schema key en passant
+                    rv = json.dumps(schema)
                 else:
-                    schema = resp['result']
-                    data_json = schema['data']  # response result data is double-encoded on the ledger
-                    if data_json and 'attr_names' in data_json:
-                        self._schema_store[index] = schema
-                        rv = json.dumps(schema)
-                    else:
-                        logger.info('_AgentCore.get_schema: ledger query returned response with no data')
+                    logger.info('_AgentCore.get_schema: ledger query returned response with no data')
 
         elif isinstance(index, int):
-            if self._schema_store.contains(index):
-                rv = json.dumps(self._schema_store[index])
-            else:
-                req_json = await ledger.build_get_txn_request(self.did, index)
-                resp = json.loads(await ledger.submit_request(self.pool.handle, req_json))
-                await asyncio.sleep(0)
+            req_json = await ledger.build_get_txn_request(self.did, index)
+            resp = json.loads(await ledger.submit_request(self.pool.handle, req_json))
+            await asyncio.sleep(0)
 
-                if ('op' in resp) and (resp['op'] == 'REQNACK'):
-                    logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
-                elif resp['result']['data'] and (resp['result']['data']['type'] == '101'):  # type '101' == schema
-                    # getting it as a transaction misses the 'dest' field: look it up from schema key data
-                    rv = await self.get_schema(SchemaKey(
-                        resp['result']['data']['identifier'],
-                        resp['result']['data']['data']['name'],
-                        resp['result']['data']['data']['version']))
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+                logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
+            elif resp['result']['data'] and (resp['result']['data']['type'] == '101'):  # type '101' == schema
+                # getting it as a transaction misses the 'dest' field: look it up from schema key data
+                rv = await self.get_schema(SchemaKey(
+                    resp['result']['data']['identifier'],
+                    resp['result']['data']['data']['name'],
+                    resp['result']['data']['data']['version']))
 
         logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
         return rv
@@ -277,7 +305,7 @@ class _AgentCore:
         await asyncio.sleep(0)
 
         resp = json.loads(resp_json)
-        if ('op' in resp) and (resp['op'] == 'REQNACK'):
+        if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
             logger.error('_AgentCore.get_endpoint: {}'.format(resp['reason']))
         else:
             data_json = (json.loads(resp_json))['result']['data']  # it's double-encoded on the ledger
@@ -296,15 +324,6 @@ class _AgentCore:
         :return: representation for current object
         """
 
-        return '{}({}, {})'.format(self.__class__.__name__, repr(self.pool), self.wallet)
-
-    def __str__(self) -> str:
-        """
-        Return informal string identifying current object.
-
-        :return: string identifying current object
-        """
-
         return '{}({})'.format(self.__class__.__name__, self.wallet)
 
 
@@ -318,11 +337,10 @@ class _BaseAgent(_AgentCore):
     and it receives and responds to (json) VON protocol messages (via a VON connector).
     """
 
-    def __init__(self, pool: NodePool, wallet: Wallet, cfg: dict = None) -> None:
+    def __init__(self, wallet: Wallet, cfg: dict = None) -> None:
         """
         Initializer for agent. Retain input parameters; do not open wallet.
 
-        :param pool: node pool on which agent operates
         :param wallet: wallet for agent use
         :param cfg: configuration, None for default with no endpoint and proxy-relay=False;
             e.g., {
@@ -332,12 +350,12 @@ class _BaseAgent(_AgentCore):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('_BaseAgent.__init__: >>> pool: {}, wallet: {}, cfg: {}'.format(pool, wallet, cfg))
+        logger.debug('_BaseAgent.__init__: >>> wallet: {}, cfg: {}'.format(wallet, cfg))
 
-        super().__init__(pool, wallet)
+        super().__init__(wallet)
 
         self._cfg = cfg or {}
-        validate_config('agent', self._cfg)
+        # validate_config('agent', self._cfg)
 
         logger.debug('_BaseAgent.__init__: <<<')
 
@@ -364,10 +382,9 @@ class _BaseAgent(_AgentCore):
                 }  # indy-sdk needs value itself to be a dict; {'endpoint': '...'} is no good
             })
             req_json = await ledger.build_attrib_request(self.did, self.did, None, raw_json, None)
-            resp_json = await ledger.sign_and_submit_request(self.pool.handle, self.wallet.handle, self.did, req_json)
-            await asyncio.sleep(0)
+            resp_json = await self._sign_submit(req_json)
             resp = json.loads(resp_json)
-            if ('op' in resp) and (resp['op'] == 'REQNACK'):
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
                 logger.error('_BaseAgent.send_endpoint: {}'.format(resp['reason']))
         else:
             logger.debug('_BaseAgent.send_endpoint: <!< no endpoint configured')
@@ -379,9 +396,12 @@ class _BaseAgent(_AgentCore):
 
     async def get_claim_def(self, schema_seq_no: int, issuer_did: str) -> str:
         """
-        Get claim definition from ledger by its parent schema and issuer DID; return
-        empty production {} for none, IndyError with error_code = ErrorCode.LedgerInvalidTransaction
-        for bad request.
+        Get claim definition from ledger by its parent schema transaction number and issuer DID.
+        Return empty production {} for no such claim definition, or IndyError with
+        error_code = ErrorCode.LedgerInvalidTransaction for bad request.
+
+        Retrieve the schema from the agent's claim definition cache if it has it; cache it
+        en passant if it does not (and if there is a corresponding claim definition on the ledger).
 
         :param schema_seq_no: schema sequence number on the ledger
         :param issuer_did: (claim def) issuer DID
@@ -394,6 +414,15 @@ class _BaseAgent(_AgentCore):
             issuer_did))
 
         rv = json.dumps({})
+        # with claim_def_cache_lock:
+        if (schema_seq_no, issuer_did) in claim_def_cache:
+            logger.info('_BaseAgent.get_claim_def: got claim def for schema ({}, {}) from claim def cache'.format(
+                schema_seq_no,
+                issuer_did))
+            rv = claim_def_cache[(schema_seq_no, issuer_did)]
+            logger.debug('_BaseAgent.get_claim_def: <<< {}'.format(rv))
+            return json.dumps(rv)
+
         req_json = await ledger.build_get_claim_def_txn(
             self.did,
             schema_seq_no,
@@ -404,12 +433,13 @@ class _BaseAgent(_AgentCore):
         await asyncio.sleep(0)
 
         resp = json.loads(resp_json)
-        if ('op' in resp) and (resp['op'] == 'REQNACK'):
+        if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
             logger.error('_BaseAgent.get_claim_def: {}'.format(resp['reason']))
         elif 'result' in resp and 'data' in resp['result'] and resp['result']['data']:
             data = resp['result']['data']
             if 'revocation' in data and data['revocation'] is not None:
                 resp['result']['data']['revocation'] = None  #TODO: support revocation
+            claim_def_cache[(schema_seq_no, issuer_did)] = resp['result']  # update claim def cache
             rv = json.dumps(resp['result'])
         else:
             logger.info('_BaseAgent.get_claim_def: ledger query returned response with no data')
@@ -583,7 +613,7 @@ class _BaseAgent(_AgentCore):
         resp = json.loads(await ledger.submit_request(self.pool.handle, req_json))
         await asyncio.sleep(0)
 
-        if ('op' in resp) and (resp['op'] == 'REQNACK'):
+        if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
             logger.error('_BaseAgent.process_get_txn: {}'.format(resp['reason']))
         else:
             rv = json.dumps(resp['result']['data'] or {})
@@ -647,12 +677,7 @@ class AgentRegistrar(_BaseAgent):
             verkey,
             alias,
             None)
-        await ledger.sign_and_submit_request(
-            self.pool.handle,
-            self.wallet.handle,
-            self.did,
-            req_json)
-        await asyncio.sleep(0)
+        await self._sign_submit(req_json)
 
         logger.debug('AgentRegistrar.send_nym: <<<')
 
@@ -726,18 +751,16 @@ class Origin(_BaseAgent):
 
         else:
             req_json = await ledger.build_schema_request(self.did, schema_data_json)
-            resp_json = await ledger.sign_and_submit_request(self.pool.handle, self.wallet.handle, self.did, req_json)
-            await asyncio.sleep(0)
-
+            resp_json = await self._sign_submit(req_json)
             resp = json.loads(resp_json)
-            if ('op' in resp) and (resp['op'] == 'REQNACK'):
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
                 logger.error('_BaseAgent.send_schema: {}'.format(resp['reason']))
             else:
                 resp_result = (json.loads(resp_json))['result']
                 rv = await self.get_schema(SchemaKey(
                     resp_result['identifier'],
                     resp_result['data']['name'],
-                    resp_result['data']['version']))  # adds to store
+                    resp_result['data']['version']))  # adds to cache en passant
 
         logger.debug('Origin.send_schema: <<< {}'.format(rv))
         return rv
@@ -823,14 +846,14 @@ class Issuer(Origin):
                 else:
                     logger.error('Issuer.send_claim_def: <!< corrupt wallet {}'.format(self.wallet.name))
                     raise CorruptWallet(
-                        'Corrupt Issuer wallet ({}) has claim def on schema {} version {} not on ledger'.format(
+                        'Corrupt Issuer wallet {} has claim def on schema {} version {} not on ledger'.format(
                             self.wallet.name,
                             schema['data']['name'],
                             schema['data']['version']))
             else:
                 logger.error(
                     'Issuer.send_claim_def: <!< cannot store claim def in wallet {}: indy error code {}'.format(
-                        self.name,
+                        self.wallet.name,
                         self.e.error_code))
                 raise
 
@@ -848,7 +871,7 @@ class Issuer(Origin):
             await asyncio.sleep(0)
 
             resp = json.loads(resp_json)
-            if ('op' in resp) and (resp['op'] == 'REQNACK'):
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
                 logger.error('Issuer.send_claim_def: {}'.format(resp['reason']))
             else:
                 data = resp['result']['data']
@@ -864,6 +887,8 @@ class Issuer(Origin):
         """
         Create claim offer as Issuer for given schema and agent on specified DID.
 
+        Raise CorruptWallet if the wallet has no private key for the corresponding claim definition.
+
         :param schema_json: schema as it appears on ledger via get_schema()
         :return: json claim offer for use in storing claims at HolderProver.
         """
@@ -873,11 +898,26 @@ class Issuer(Origin):
             schema_json,
             holder_prover_did))
 
-        rv = await anoncreds.issuer_create_claim_offer(
-            self.wallet.handle,
-            schema_json,
-            self.did,
-            holder_prover_did)
+        rv = None
+
+        try:
+            rv = await anoncreds.issuer_create_claim_offer(
+                self.wallet.handle,
+                schema_json,
+                self.did,
+                holder_prover_did)
+        except IndyError as e:
+            if e.error_code == ErrorCode.WalletNotFoundError:
+                logger.debug(   
+                    'Issuer.create_claim_offer: <!< did not issue claim definition from wallet {}'.format(
+                        self.wallet.name))
+                raise CorruptWallet('Cannot create claim offer: did not issue claim definition from wallet {}'.format(
+                    self.wallet.name))
+            else:
+                logger.debug(   
+                    'Issuer.create_claim_offer: <!<  cannot create claim offer, indy error code {}'.format(
+                        self.e.error_code))
+                raise
 
         logger.debug('Issuer.create_claim_offer: <<< {}'.format(rv))
         return rv
@@ -967,11 +1007,10 @@ class HolderProver(_BaseAgent):
     and a Prover produces proof for claims.
     """
 
-    def __init__(self, pool: NodePool, wallet: Wallet, cfg: dict = None) -> None:
+    def __init__(self, wallet: Wallet, cfg: dict = None) -> None:
         """
         Initializer for HolderProver agent. Retain input parameters; do not open wallet.
 
-        :param pool: node pool on which agent operates
         :param wallet: wallet for agent use
         :param cfg: configuration, None for default with no endpoint and proxy-relay=False;
             e.g., {
@@ -981,9 +1020,9 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('HolderProver.__init__: >>> pool: {}, wallet: {}, cfg: {}'.format(pool, wallet, cfg))
+        logger.debug('HolderProver.__init__: >>> wallet: {}, cfg: {}'.format(wallet, cfg))
 
-        super().__init__(pool, wallet, cfg)
+        super().__init__(wallet, cfg)
         self._master_secret = None
 
         logger.debug('HolderProver.__init__: <<<')
@@ -1007,8 +1046,8 @@ class HolderProver(_BaseAgent):
                 logger.info('HolderProver did not create master secret - it already exists')
             else:
                 logger.debug(   
-                    'HolderProver.create_master_secret: <<<  cannot create master secret {}, indy error code {}'.format(
-                        self.name,
+                    'HolderProver.create_master_secret: <!<  cannot create master secret {}, indy error code {}'.format(
+                        self.wallet.name,
                         self.e.error_code))
                 raise
 
@@ -1040,8 +1079,8 @@ class HolderProver(_BaseAgent):
             claim_offer_json)
 
         schema_seq_no = json.loads(claim_def_json)['ref']  # = schema seq no in claim def
-        await self.get_schema(schema_seq_no)  # update schema store if need be
-        s_key = self._schema_store.schema_key_for(schema_seq_no)
+        await self.get_schema(schema_seq_no)  # update schema cache en passant if need be
+        s_key = schema_cache.schema_key_for(schema_seq_no)
         rv = await anoncreds.prover_create_and_store_claim_req(
             self.wallet.handle,
             self.did,
@@ -1171,7 +1210,7 @@ class HolderProver(_BaseAgent):
         referent2claim_def = {}
         for attr_uuid in claims['attrs']:
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])
-            schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema store
+            schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema cache
             referent2schema[claims['attrs'][attr_uuid][0]['referent']] = schema
             referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = (
                 json.loads(await self.get_claim_def(
@@ -1461,13 +1500,13 @@ class HolderProver(_BaseAgent):
                     [pred_matcher['schema'] for pred_matcher in form['data']['claim-filter']['pred-match']] +
                     [r_attr['schema'] for r_attr in form['data']['requested-attrs']]):
                 s_key = schema_key_for(form_s_key_spec)
-                await self.get_schema(s_key)  # add to store en passant
+                await self.get_schema(s_key)  # add to cache en passant
                 form_schema_keys.append(s_key)
 
             req_preds = {}  # do preds first: there may be defaulting req-attrs to compute, avoid collision with preds
             for pred_match in form['data']['claim-filter']['pred-match']:
                 s_key = schema_key_for(pred_match['schema'])
-                seq_no = self._schema_store[s_key]['seqNo']
+                seq_no = schema_cache[s_key]['seqNo']
                 for pred_match_match in pred_match['match']:
                     req_preds['{}_{}_uuid'.format(seq_no, pred_match_match['attr'])] = {
                         'attr_name': pred_match_match['attr'],
@@ -1486,7 +1525,7 @@ class HolderProver(_BaseAgent):
             if form['data']['requested-attrs']:
                 for req_attr in form['data']['requested-attrs']:
                     s_key = schema_key_for(req_attr['schema'])
-                    schema = self._schema_store[s_key]
+                    schema = schema_cache[s_key]
                     for name in req_attr['names'] or schema['data']['attr_names']:
                         if all(name != req_pred['attr_name'] or
                             s_key != schema_key_for(req_pred['restrictions'][0]['schema_key'])
@@ -1503,7 +1542,7 @@ class HolderProver(_BaseAgent):
                             }
             else:
                 for s_key in form_schema_keys:
-                    schema = self._schema_store[s_key]
+                    schema = schema_cache[s_key]
                     for attr_name in schema['data']['attr_names']:
                         if all(attr_name != req_pred['attr_name'] or
                             s_key != schema_key_for(req_pred['restrictions'][0]['schema_key'])
@@ -1585,14 +1624,14 @@ class HolderProver(_BaseAgent):
             for form_s_key_spec in (form['data']['schemata'] +
                     [r_attr['schema'] for r_attr in form['data']['requested-attrs']]):
                 s_key = schema_key_for(form_s_key_spec)
-                await self.get_schema(s_key)  # add to store en passant
+                await self.get_schema(s_key)  # add to cache en passant
                 form_schema_keys.append(s_key)
 
             req_attrs = {}
             if form['data']['requested-attrs']:
                 for req_attr in form['data']['requested-attrs']:
                     s_key = schema_key_for(req_attr['schema'])
-                    schema = self._schema_store[s_key]
+                    schema = schema_cache[s_key]
                     for name in req_attr['names'] or schema['data']['attr_names']:
                         req_attrs['{}_{}_uuid'.format(schema['seqNo'], name)] = {
                             'name': name,
@@ -1606,7 +1645,7 @@ class HolderProver(_BaseAgent):
                         }
             else:
                 for s_key in form_schema_keys:
-                    schema = self._schema_store[s_key]
+                    schema = schema_cache[s_key]
                     for attr_name in schema['data']['attr_names']:
                         req_attrs['{}_{}_uuid'.format(schema['seqNo'], attr_name)] = {
                             'name': attr_name,

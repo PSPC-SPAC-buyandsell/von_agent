@@ -1000,6 +1000,7 @@ class Issuer(Origin):
         logger.debug('Issuer.process_post: <!< not this form type: {}'.format(form['type']))
         raise TokenType('{} does not support token type {}'.format(self.__class__.__name__, form['type']))
 
+my_schema_cache = dict()
 
 class HolderProver(_BaseAgent):
     """
@@ -1066,9 +1067,10 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('HolderProver.store_claim_req: >>> claim_offer_json: {}, claim_def_json: {}'.format(
+        logger.warn('HolderProver.store_claim_req: >>> claim_offer_json: {}, claim_def_json: {}'.format(
             claim_offer_json,
             claim_def_json))
+        start_time = time()
 
         if self._master_secret is None:
             logger.debug('HolderProver.store_claim_req: <!< master secret not set')
@@ -1077,6 +1079,10 @@ class HolderProver(_BaseAgent):
         await anoncreds.prover_store_claim_offer(
             self.wallet.handle,
             claim_offer_json)
+
+        elapsed_time = time() - start_time
+        logger.warn('prover_store_claim_offer step elapsed time = {}'.format(elapsed_time))
+        start_time = time()
 
         schema_seq_no = json.loads(claim_def_json)['ref']  # = schema seq no in claim def
         await self.get_schema(schema_seq_no)  # update schema cache en passant if need be
@@ -1088,7 +1094,10 @@ class HolderProver(_BaseAgent):
             claim_def_json,
             self._master_secret)
 
-        logger.debug('HolderProver.store_claim_req: <<< {}'.format(rv))
+        elapsed_time = time() - start_time
+        logger.warn('prover_create_and_store_claim_req step elapsed time = {}'.format(elapsed_time))
+
+        logger.warn('HolderProver.store_claim_req: <<< {}'.format(rv))
         return rv
 
     async def store_claim(self, claim_json: str) -> None:
@@ -1099,13 +1108,13 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('HolderProver.store_claim: >>> claim_json: {}'.format(claim_json))
+        logger.warn('HolderProver.store_claim: >>> claim_json: {}'.format(claim_json))
 
         await anoncreds.prover_store_claim(
             self.wallet.handle,
             claim_json,
             None)  # rev_reg_json - TODO: revocation
-        logger.debug('HolderProver.store_claim: <<<')
+        logger.warn('HolderProver.store_claim: <<<')
 
     async def create_proof(self, proof_req: dict, claims: dict, requested_claims: dict = None) -> str:
         """
@@ -1207,16 +1216,27 @@ class HolderProver(_BaseAgent):
             raise ClaimsFocus('Proof request requires unique claims per attribute; violators: {}'.format(x_uuids))
 
         referent2schema = {}
+        referent2schema_cache = dict()
         referent2claim_def = {}
+        referent2claim_def_cache = dict()
         for attr_uuid in claims['attrs']:
+            # logger.warn('HolderProver.create_proof: <<< get schema for {} {}'.format(attr_uuid, claims['attrs'][attr_uuid][0]['issuer_did']))
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])
             schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema cache
             referent2schema[claims['attrs'][attr_uuid][0]['referent']] = schema
-            referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = (
-                json.loads(await self.get_claim_def(
-                    schema['seqNo'],
-                    claims['attrs'][attr_uuid][0]['issuer_did'])))
+            def_key = str(schema['seqNo']) + ":" + claims['attrs'][attr_uuid][0]['issuer_did']
+            if def_key in referent2claim_def_cache:
+                claim_def = referent2claim_def_cache[def_key]
+            else:
+                claim_def = (
+                    json.loads(await self.get_claim_def(
+                        schema['seqNo'],
+                        claims['attrs'][attr_uuid][0]['issuer_did'])))
+                referent2claim_def_cache[def_key] = claim_def
+            referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = claim_def
+            # logger.warn('HolderProver.create_proof: <<< GOT IT schema for {}'.format(attr_uuid))
 
+        logger.debug('HolderProver.create_proof: <<< start')
         rv = await anoncreds.prover_create_proof(
             self.wallet.handle,
             json.dumps(proof_req),

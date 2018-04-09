@@ -52,6 +52,7 @@ class _AgentCore:
         Initializer for agent. Retain wallet.
 
         Raise AbsentWallet if wallet is not yet created.
+        Note - move the exception to __aenter__
 
         :param wallet: wallet for agent use
         """
@@ -60,6 +61,10 @@ class _AgentCore:
         logger.debug('_AgentCore.__init__: >>> wallet: {}'.format(wallet))
 
         self._wallet = wallet
+        //if not self.wallet.created:
+        //    raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
+
+        self._schema_store = SchemaStore()
 
         logger.debug('_AgentCore.__init__: <<<')
 
@@ -108,11 +113,16 @@ class _AgentCore:
         Context manager entry. Open wallet and store agent DID in it.
         For use in monolithic call opening, using, and closing the agent.
 
+        Raise AbsentWallet if wallet is not yet created.
+
         :return: current object
         """
 
         logger = logging.getLogger(__name__)
         logger.debug('_AgentCore.__aenter__: >>>')
+
+        if not self.wallet.created:
+            raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
 
         rv = await self.open()
 
@@ -844,14 +854,14 @@ class Issuer(Origin):
                         schema['data']['name'],
                         schema['data']['version']))
                 else:
-                    logger.error('Issuer.send_claim_def: <!< corrupt wallet {}'.format(self.wallet.name))
+                    logger.debug('Issuer.send_claim_def: <!< corrupt wallet {}'.format(self.wallet.name))
                     raise CorruptWallet(
                         'Corrupt Issuer wallet {} has claim def on schema {} version {} not on ledger'.format(
                             self.wallet.name,
                             schema['data']['name'],
                             schema['data']['version']))
             else:
-                logger.error(
+                logger.debug(
                     'Issuer.send_claim_def: <!< cannot store claim def in wallet {}: indy error code {}'.format(
                         self.wallet.name,
                         self.e.error_code))

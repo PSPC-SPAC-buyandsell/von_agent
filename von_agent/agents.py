@@ -61,8 +61,8 @@ class _AgentCore:
         logger.debug('_AgentCore.__init__: >>> wallet: {}'.format(wallet))
 
         self._wallet = wallet
-        //if not self.wallet.created:
-        //    raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
+        # if not self.wallet.created:
+        #    raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
 
         self._schema_store = SchemaStore()
 

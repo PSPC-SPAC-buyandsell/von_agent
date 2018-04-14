@@ -14,17 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+
+import asyncio
+import json
+import logging
+import re
+
+from time import time
+from typing import Set, Union
 from indy import anoncreds, ledger
 from indy.error import IndyError, ErrorCode
 from requests import post, HTTPError
-from threading import Lock
-from time import time
-from typing import Set, Union
-from von_agent.cache import claim_def_cache, claim_def_cache_lock, schema_cache, schema_cache_lock
+from von_agent.cache import CLAIM_DEF_CACHE, SCHEMA_CACHE
 from von_agent.error import (
     AbsentAttribute,
     AbsentMasterSecret,
-    AbsentWallet,
+    AbsentSchema,
     ClaimsFocus,
     CorruptWallet,
     ProxyHop,
@@ -32,14 +37,9 @@ from von_agent.error import (
 from von_agent.nodepool import NodePool
 from von_agent.proto.validate import validate as validate_form
 from von_agent.schemakey import SchemaKey, schema_key_for
-from von_agent.util import encode, decode, prune_claims_json, ppjson
+from von_agent.util import encode, prune_claims_json
 from von_agent.validate_config import CONFIG_JSON_SCHEMA, validate_config
 from von_agent.wallet import Wallet
-
-import asyncio
-import json
-import logging
-import re
 
 
 class _AgentCore:
@@ -176,7 +176,7 @@ class _AgentCore:
         """
 
         logger = logging.getLogger(__name__)
-        logger.debug('_AgentCore._sign_submit: >>> json: {}'.format(json))
+        logger.debug('_AgentCore._sign_submit: >>> json: {}'.format(req_json))
 
         try:
             rv_json = await ledger.sign_and_submit_request(self.pool.handle, self.wallet.handle, self.did, req_json)
@@ -189,7 +189,7 @@ class _AgentCore:
                 raise CorruptWallet(
                     'Corrupt wallet {} is not compatible with pool {}'.format(self.wallet.name, self.pool.name))
             else:
-                logger.debug(   
+                logger.debug(
                     '_AgentCore._sign_submit: <!<  cannot sign request for ledger, indy error code {}'.format(
                         self.wallet.name))
                 raise e
@@ -238,46 +238,46 @@ class _AgentCore:
         logger.debug('_AgentCore.get_schema: >>> index: {}'.format(index))
 
         rv = json.dumps({})
-        # with schema_cache_lock:
-        if schema_cache.contains(index):
-            logger.info('_AgentCore.get_schema: got schema {} from schema cache'.format(index))
-            rv = schema_cache[index]
-            logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
-            return json.dumps(rv)
+        with SCHEMA_CACHE.lock:
+            if SCHEMA_CACHE.contains(index):
+                logger.info('_AgentCore.get_schema: got schema {} from schema cache'.format(index))
+                rv = SCHEMA_CACHE[index]
+                logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
+                return json.dumps(rv)
 
-        if isinstance(index, SchemaKey):
-            req_json = await ledger.build_get_schema_request(
-                self.did,
-                index.origin_did,
-                json.dumps({'name': index.name, 'version': index.version}))
-            resp_json = await ledger.submit_request(self.pool.handle, req_json)
-            await asyncio.sleep(0)
+            if isinstance(index, SchemaKey):
+                req_json = await ledger.build_get_schema_request(
+                    self.did,
+                    index.origin_did,
+                    json.dumps({'name': index.name, 'version': index.version}))
+                resp_json = await ledger.submit_request(self.pool.handle, req_json)
+                await asyncio.sleep(0)
 
-            resp = json.loads(resp_json)
-            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
-                logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
-            else:
-                schema = resp['result']
-                data_json = schema['data']  # response result data is double-encoded on the ledger
-                if data_json and 'attr_names' in data_json:
-                    schema_cache[index] = schema  # schema cache indexes by both txn# and schema key en passant
-                    rv = json.dumps(schema)
+                resp = json.loads(resp_json)
+                if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+                    logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
                 else:
-                    logger.info('_AgentCore.get_schema: ledger query returned response with no data')
+                    schema = resp['result']
+                    data_json = schema['data']  # response result data is double-encoded on the ledger
+                    if data_json and 'attr_names' in data_json:
+                        SCHEMA_CACHE[index] = schema  # schema cache indexes by both txn# and schema key en passant
+                        rv = json.dumps(schema)
+                    else:
+                        logger.info('_AgentCore.get_schema: ledger query returned response with no data')
 
-        elif isinstance(index, int):
-            req_json = await ledger.build_get_txn_request(self.did, index)
-            resp = json.loads(await ledger.submit_request(self.pool.handle, req_json))
-            await asyncio.sleep(0)
+            elif isinstance(index, int):
+                req_json = await ledger.build_get_txn_request(self.did, index)
+                resp = json.loads(await ledger.submit_request(self.pool.handle, req_json))
+                await asyncio.sleep(0)
 
-            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
-                logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
-            elif resp['result']['data'] and (resp['result']['data']['type'] == '101'):  # type '101' == schema
-                # getting it as a transaction misses the 'dest' field: look it up from schema key data
-                rv = await self.get_schema(SchemaKey(
-                    resp['result']['data']['identifier'],
-                    resp['result']['data']['data']['name'],
-                    resp['result']['data']['data']['version']))
+                if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+                    logger.error('_AgentCore.get_schema: {}'.format(resp['reason']))
+                elif resp['result']['data'] and (resp['result']['data']['type'] == '101'):  # type '101' == schema
+                    # getting it as a transaction misses the 'dest' field: look it up from schema key data
+                    rv = await self.get_schema(SchemaKey(
+                        resp['result']['data']['identifier'],
+                        resp['result']['data']['data']['name'],
+                        resp['result']['data']['data']['version']))
 
         logger.debug('_AgentCore.get_schema: <<< {}'.format(rv))
         return rv
@@ -361,6 +361,11 @@ class _BaseAgent(_AgentCore):
 
     @property
     def cfg(self):
+        """
+        Accessor for configuration attribute.
+
+        :return: configuration (dict)
+        """
         return self._cfg
 
     async def send_endpoint(self) -> str:
@@ -405,7 +410,8 @@ class _BaseAgent(_AgentCore):
 
         :param schema_seq_no: schema sequence number on the ledger
         :param issuer_did: (claim def) issuer DID
-        :return: claim definition json as retrieved from ledger
+        :return: claim definition json as retrieved from ledger,
+            empty production {} for no such claim definition
         """
 
         logger = logging.getLogger(__name__)
@@ -414,9 +420,17 @@ class _BaseAgent(_AgentCore):
             issuer_did))
 
         rv = json.dumps({})
-        # with claim_def_cache_lock:
-        if (schema_seq_no, issuer_did) in claim_def_cache:
-            logger.info('_BaseAgent.get_claim_def: got claim def for schema ({}, {}) from claim def cache'.format(
+        with CLAIM_DEF_CACHE.lock:
+            if (schema_seq_no, issuer_did) in CLAIM_DEF_CACHE:
+                logger.info('_BaseAgent.get_claim_def: got claim def for schema ({}, {}) from claim def cache'.format(
+                    schema_seq_no,
+                    issuer_did))
+                rv = CLAIM_DEF_CACHE[(schema_seq_no, issuer_did)]
+                logger.debug('_BaseAgent.get_claim_def: <<< {}'.format(rv))
+                return json.dumps(rv)
+
+            req_json = await ledger.build_get_claim_def_txn(
+                self.did,
                 schema_seq_no,
                 issuer_did))
             rv = claim_def_cache[(schema_seq_no, issuer_did)]
@@ -429,20 +443,17 @@ class _BaseAgent(_AgentCore):
             'CL',
             issuer_did)
 
-        resp_json = await ledger.submit_request(self.pool.handle, req_json)
-        await asyncio.sleep(0)
-
-        resp = json.loads(resp_json)
-        if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
-            logger.error('_BaseAgent.get_claim_def: {}'.format(resp['reason']))
-        elif 'result' in resp and 'data' in resp['result'] and resp['result']['data']:
-            data = resp['result']['data']
-            if 'revocation' in data and data['revocation'] is not None:
-                resp['result']['data']['revocation'] = None  #TODO: support revocation
-            claim_def_cache[(schema_seq_no, issuer_did)] = resp['result']  # update claim def cache
-            rv = json.dumps(resp['result'])
-        else:
-            logger.info('_BaseAgent.get_claim_def: ledger query returned response with no data')
+            resp = json.loads(resp_json)
+            if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
+                logger.error('_BaseAgent.get_claim_def: {}'.format(resp['reason']))
+            elif 'result' in resp and 'data' in resp['result'] and resp['result']['data']:
+                data = resp['result']['data']
+                if 'revocation' in data and data['revocation'] is not None:
+                    resp['result']['data']['revocation'] = None  #TODO: support revocation
+                CLAIM_DEF_CACHE[(schema_seq_no, issuer_did)] = resp['result']  # update claim def cache
+                rv = json.dumps(resp['result'])
+            else:
+                logger.info('_BaseAgent.get_claim_def: ledger query returned response with no data')
 
         logger.debug('_BaseAgent.get_claim_def: <<< {}'.format(rv))
         return rv
@@ -462,7 +473,7 @@ class _BaseAgent(_AgentCore):
         rv = None
         if (self.cfg.get('proxy-relay', False)) and ('proxy-did' in form['data']):
             proxy_did = form['data'].pop('proxy-did')
-            if (proxy_did != self.did):
+            if proxy_did != self.did:
                 endpoint = json.loads(await self.get_endpoint(proxy_did))
                 if (('endpoint' not in endpoint) or
                     not re.match(
@@ -548,7 +559,7 @@ class _BaseAgent(_AgentCore):
                 logger.debug('_BaseAgent.process_post: <<< {}'.format(rv))
                 return rv
 
-            resp_json = await self.send_endpoint()
+            await self.send_endpoint()
             rv = json.dumps({})
             logger.debug('_BaseAgent.process_post: <<< {}'.format(rv))
             return rv
@@ -562,11 +573,6 @@ class _BaseAgent(_AgentCore):
 
             s_key = schema_key_for(form['data']['schema'])
             schema_json = await self.get_schema(s_key)
-            schema = json.loads(schema_json)
-            if not schema:
-                rv = schema_json
-                logger.debug('_BaseAgent.process_post: <<< {}'.format(rv))
-                return rv
 
             rv = schema_json
             logger.debug('_BaseAgent.process_post: <<< {}'.format(rv))
@@ -697,9 +703,9 @@ class AgentRegistrar(_BaseAgent):
 
         # Try dispatching to each ancestor from _BaseAgent first
         mro = AgentRegistrar._mro_dispatch()
-        for ResponderClass in mro:
+        for responder_class in mro:
             try:
-                rv = await ResponderClass.process_post(self, form)
+                rv = await responder_class.process_post(self, form)
                 logger.debug('AgentRegistrar.process_post: <<< {}'.format(rv))
                 return rv
             except TokenType:
@@ -743,7 +749,7 @@ class Origin(_BaseAgent):
         rv = json.dumps({})
 
         schema_data = json.loads(schema_data_json)
-        if (json.loads(await self.get_schema(SchemaKey(self.did, schema_data['name'], schema_data['version'])))):
+        if json.loads(await self.get_schema(SchemaKey(self.did, schema_data['name'], schema_data['version']))):
             logger.error('Schema {} version {} already exists on ledger for origin-did {}: not sending'.format(
                 schema_data['name'],
                 schema_data['version'],
@@ -781,9 +787,9 @@ class Origin(_BaseAgent):
 
         # Try dispatching to each ancestor from _BaseAgent first
         mro = Origin._mro_dispatch()
-        for ResponderClass in mro:
+        for responder_class in mro:
             try:
-                rv = await ResponderClass.process_post(self, form)
+                rv = await responder_class.process_post(self, form)
                 logger.debug('Origin.process_post: <<< {}'.format(rv))
                 return rv
             except TokenType:
@@ -821,13 +827,15 @@ class Issuer(Origin):
         logger.debug('Issuer.send_claim_def: >>> schema_json: {}'.format(schema_json))
 
         schema = json.loads(schema_json)
-        rv = await self.get_claim_def(schema['seqNo'], schema['identifier'])
+
+        rv = await self.get_claim_def(schema['seqNo'], schema['dest'])
         if json.loads(rv):
             # TODO: revocation support will definitely change this check
             logger.info(
-                'Claim def on schema {} version {} already exists on ledger; Issuer not sending another'.format(
+                'Claim def on schema {} version {} already exists on ledger; Issuer {} not sending another'.format(
                     schema['data']['name'],
-                    schema['data']['version']))
+                    schema['data']['version'],
+                    self.wallet.name))
 
         try:
             claim_def_json = await anoncreds.issuer_create_and_store_claim_def(
@@ -840,7 +848,8 @@ class Issuer(Origin):
             # TODO: revocation support may change this check
             if e.error_code == ErrorCode.AnoncredsClaimDefAlreadyExistsError:
                 if json.loads(rv):
-                    logger.info('Issuer wallet reusing existing claim def on schema {} version {}'.format(
+                    logger.info('Issuer wallet {} reusing existing claim def on schema {} version {}'.format(
+                        self.wallet.name,
                         schema['data']['name'],
                         schema['data']['version']))
                 else:
@@ -854,7 +863,7 @@ class Issuer(Origin):
                 logger.error(
                     'Issuer.send_claim_def: <!< cannot store claim def in wallet {}: indy error code {}'.format(
                         self.wallet.name,
-                        self.e.error_code))
+                        e.error_code))
                 raise
 
         if not json.loads(rv):  # checking the ledger returned no claim def: send it
@@ -908,15 +917,15 @@ class Issuer(Origin):
                 holder_prover_did)
         except IndyError as e:
             if e.error_code == ErrorCode.WalletNotFoundError:
-                logger.debug(   
+                logger.debug(
                     'Issuer.create_claim_offer: <!< did not issue claim definition from wallet {}'.format(
                         self.wallet.name))
                 raise CorruptWallet('Cannot create claim offer: did not issue claim definition from wallet {}'.format(
                     self.wallet.name))
             else:
-                logger.debug(   
+                logger.debug(
                     'Issuer.create_claim_offer: <!<  cannot create claim offer, indy error code {}'.format(
-                        self.e.error_code))
+                        e.error_code))
                 raise
 
         logger.debug('Issuer.create_claim_offer: <<< {}'.format(rv))
@@ -953,7 +962,7 @@ class Issuer(Origin):
         Take a request from service wrapper POST and dispatch the applicable agent action.
         Return (json) response arising from processing.
 
-        Raise TokenType on demurral.
+        Raise TokenType on demurral, or any other exception on its occurrence.
 
         :param form: request form on which to operate
         :return: json response
@@ -964,23 +973,39 @@ class Issuer(Origin):
 
         # Try dispatching to each ancestor from _BaseAgent first
         mro = Issuer._mro_dispatch()
-        for ResponderClass in mro:
+        for responder_class in mro:
             try:
-                rv = await ResponderClass.process_post(self, form)
+                rv = await responder_class.process_post(self, form)
                 logger.debug('Issuer.process_post: <<< {}'.format(rv))
                 return rv
             except TokenType:
                 pass
 
         if form['type'] == 'claim-def-send':
-            schema_json = await self.get_schema(schema_key_for(form['data']['schema']))
+            s_key = schema_key_for(form['data']['schema'])
+            schema_json = await self.get_schema(s_key)
+            schema = json.loads(schema_json)
+            if not schema:
+                logger.debug(
+                    'Issuer.process_post: <!< absent schema {}, claim def may pertain to another ledger'.format(
+                        s_key))
+                raise AbsentSchema(
+                    'Absent schema {}, claim def may pertain to another ledger'.format(s_key))
             await self.send_claim_def(schema_json)
             rv = json.dumps({})
             logger.debug('Issuer.process_post: <<< {}'.format(rv))
             return rv
 
         elif form['type'] == 'claim-offer-create':
-            schema_json = await self.get_schema(schema_key_for(form['data']['schema']))
+            s_key = schema_key_for(form['data']['schema'])
+            schema_json = await self.get_schema(s_key)
+            schema = json.loads(schema_json)
+            if not schema:
+                logger.debug(
+                    'Issuer.process_post: <!< absent schema {}, claim offer may pertain to another ledger'.format(
+                        s_key))
+                raise AbsentSchema(
+                    'Absent schema {}, claim offer may pertain to another ledger'.format(s_key))
             rv = await self.create_claim_offer(schema_json, form['data']['holder-did'])  # claim offer json
             logger.debug('Issuer.process_post: <<< {}'.format(rv))
             return rv
@@ -1046,10 +1071,10 @@ class HolderProver(_BaseAgent):
             if e.error_code == ErrorCode.AnoncredsMasterSecretDuplicateNameError:
                 logger.info('HolderProver did not create master secret - it already exists')
             else:
-                logger.debug(   
+                logger.debug(
                     'HolderProver.create_master_secret: <!<  cannot create master secret {}, indy error code {}'.format(
                         self.wallet.name,
-                        self.e.error_code))
+                        e.error_code))
                 raise
 
         self._master_secret = master_secret
@@ -1085,8 +1110,14 @@ class HolderProver(_BaseAgent):
         start_time = time()
 
         schema_seq_no = json.loads(claim_def_json)['ref']  # = schema seq no in claim def
-        await self.get_schema(schema_seq_no)  # update schema cache en passant if need be
-        s_key = schema_cache.schema_key_for(schema_seq_no)
+        schema_json = await self.get_schema(schema_seq_no)  # update schema cache en passant if need be
+        schema = json.loads(schema_json)
+        if not schema:
+            logger.debug(
+                'HolderProver.store_claim_req: <!< absent schema@#{}, claim req may pertain to another ledger'.format(
+                    schema_seq_no))
+            raise AbsentSchema(
+                'Absent schema@#{}, claim req may pertain to another ledger'.format(schema_seq_no))
         rv = await anoncreds.prover_create_and_store_claim_req(
             self.wallet.handle,
             self.did,
@@ -1223,20 +1254,27 @@ class HolderProver(_BaseAgent):
             # logger.warn('HolderProver.create_proof: <<< get schema for {} {}'.format(attr_uuid, claims['attrs'][attr_uuid][0]['issuer_did']))
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])
             schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema cache
+            if not schema:
+                logger.debug(
+                    'HolderProver.create_proof: <!< absent schema {}, proof req may pertain to another ledger'.format(
+                        s_key))
+                raise AbsentSchema(
+                    'Absent schema {}, proof req may pertain to another ledger'.format(s_key))
             referent2schema[claims['attrs'][attr_uuid][0]['referent']] = schema
-            def_key = str(schema['seqNo']) + ":" + claims['attrs'][attr_uuid][0]['issuer_did']
-            if def_key in referent2claim_def_cache:
-                claim_def = referent2claim_def_cache[def_key]
-            else:
-                claim_def = (
-                    json.loads(await self.get_claim_def(
+            referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = (
+                json.loads(await self.get_claim_def(
+                    schema['seqNo'],
+                    claims['attrs'][attr_uuid][0]['issuer_did'])))
+            if not referent2claim_def[claims['attrs'][attr_uuid][0]['referent']]:
+                logger.debug(
+                    'HolderProver.create_proof: <!< absent claim def for schema@#{}, issuer-did {}'.format(
                         schema['seqNo'],
-                        claims['attrs'][attr_uuid][0]['issuer_did'])))
-                referent2claim_def_cache[def_key] = claim_def
-            referent2claim_def[claims['attrs'][attr_uuid][0]['referent']] = claim_def
-            # logger.warn('HolderProver.create_proof: <<< GOT IT schema for {}'.format(attr_uuid))
+                        claims['attrs'][attr_uuid][0]['issuer_did']))
+                raise AbsentSchema(
+                    'Absent claim def for schema@#{}, issuer-did {}'.format(
+                        schema['seqNo'],
+                        claims['attrs'][attr_uuid][0]['issuer_did']))
 
-        logger.debug('HolderProver.create_proof: <<< start')
         rv = await anoncreds.prover_create_proof(
             self.wallet.handle,
             json.dumps(proof_req),
@@ -1248,7 +1286,7 @@ class HolderProver(_BaseAgent):
         logger.debug('HolderProver.create_proof: <<< {}'.format(rv))
         return rv
 
-    async def get_claims(self, proof_req_json: str, filt: dict = {}) -> (Set[str], str):
+    async def get_claims(self, proof_req_json: str, filt: dict = None) -> (Set[str], str):
         """
         Get claims from HolderProver wallet corresponding to proof request and filter criteria; return referents
         and proof json or empty set and empty production for no such claim.
@@ -1349,6 +1387,8 @@ class HolderProver(_BaseAgent):
         logger = logging.getLogger(__name__)
         logger.debug('HolderProver.get_claims: >>> proof_req_json: {}, filt: {}'.format(proof_req_json, filt))
 
+        if filt is None:
+            filt = {}
         rv = None
         claims_json = await anoncreds.prover_get_claims_for_proof_req(self.wallet.handle, proof_req_json)
         claims = json.loads(claims_json)
@@ -1360,13 +1400,12 @@ class HolderProver(_BaseAgent):
             for s_key in filt:
                 schema = json.loads(await self.get_schema(s_key))
                 if not schema:
-                    logger.warn('HolderProver.get_claims: ignoring filter criterion, no schema on {}'.format(s_key))
+                    logger.warning('HolderProver.get_claims: ignoring filter criterion, no schema on {}'.format(s_key))
                     filt.pop(s_key)
 
         for attr_uuid in claims['attrs']:
             for candidate in claims['attrs'][attr_uuid]:
                 if filt:
-                    add_me = True
                     claim_s_key = schema_key_for(candidate['schema_key'])
                     if claim_s_key in filt and 'attr-match' in filt[claim_s_key]:
                         if not {k: str(filt[claim_s_key]['attr-match'][k])
@@ -1484,9 +1523,9 @@ class HolderProver(_BaseAgent):
 
         # Try dispatching to each ancestor from _BaseAgent first
         mro = HolderProver._mro_dispatch()
-        for ResponderClass in mro:
+        for responder_class in mro:
             try:
-                rv = await ResponderClass.process_post(self, form)
+                rv = await responder_class.process_post(self, form)
                 logger.debug('HolderProver.process_post: <<< {}'.format(rv))
                 return rv
             except TokenType:
@@ -1506,7 +1545,24 @@ class HolderProver(_BaseAgent):
             issuer_did = form['data']['claim-offer']['issuer_did']
             schema_json = await self.get_schema(s_key)
             schema = json.loads(schema_json)
+            if not schema:
+                logger.debug(
+                    'HolderProver.process_post: <!< absent schema {}, {} may pertain to another ledger'.format(
+                        s_key,
+                        form['type']))
+                raise AbsentSchema(
+                    'Absent schema {}, {} may pertain to another ledger'.format(s_key, form['type']))
             claim_def_json = await self.get_claim_def(schema['seqNo'], issuer_did)
+            claim_def = json.loads(claim_def_json)
+            if not claim_def:
+                logger.debug(
+                    'HolderProver.process_post: <!< absent claim def for schema@#{}, issuer-did {}'.format(
+                        schema['seqNo'],
+                        issuer_did))
+                raise AbsentSchema(
+                    'Absent claim def for schema@#{}, issuer-did {}'.format(
+                        schema['seqNo'],
+                        issuer_did))
             rv = await self.store_claim_req(json.dumps(form['data']['claim-offer']), claim_def_json)
 
             logger.debug('HolderProver.process_post: <<< {}'.format(rv))
@@ -1520,13 +1576,21 @@ class HolderProver(_BaseAgent):
                     [pred_matcher['schema'] for pred_matcher in form['data']['claim-filter']['pred-match']] +
                     [r_attr['schema'] for r_attr in form['data']['requested-attrs']]):
                 s_key = schema_key_for(form_s_key_spec)
-                await self.get_schema(s_key)  # add to cache en passant
+                schema_json = await self.get_schema(s_key)  # add to cache en passant
+                schema = json.loads(schema_json)
+                if not schema:
+                    logger.debug(
+                        'HolderProver.process_post: <!< absent schema {}, {} may pertain to another ledger'.format(
+                            s_key,
+                            form['type']))
+                    raise AbsentSchema(
+                        'Absent schema {}, {} may pertain to another ledger'.format(s_key, form['type']))
                 form_schema_keys.append(s_key)
 
             req_preds = {}  # do preds first: there may be defaulting req-attrs to compute, avoid collision with preds
             for pred_match in form['data']['claim-filter']['pred-match']:
                 s_key = schema_key_for(pred_match['schema'])
-                seq_no = schema_cache[s_key]['seqNo']
+                seq_no = SCHEMA_CACHE[s_key]['seqNo']
                 for pred_match_match in pred_match['match']:
                     req_preds['{}_{}_uuid'.format(seq_no, pred_match_match['attr'])] = {
                         'attr_name': pred_match_match['attr'],
@@ -1545,7 +1609,7 @@ class HolderProver(_BaseAgent):
             if form['data']['requested-attrs']:
                 for req_attr in form['data']['requested-attrs']:
                     s_key = schema_key_for(req_attr['schema'])
-                    schema = schema_cache[s_key]
+                    schema = SCHEMA_CACHE[s_key]
                     for name in req_attr['names'] or schema['data']['attr_names']:
                         if all(name != req_pred['attr_name'] or
                             s_key != schema_key_for(req_pred['restrictions'][0]['schema_key'])
@@ -1562,7 +1626,7 @@ class HolderProver(_BaseAgent):
                             }
             else:
                 for s_key in form_schema_keys:
-                    schema = schema_cache[s_key]
+                    schema = SCHEMA_CACHE[s_key]
                     for attr_name in schema['data']['attr_names']:
                         if all(attr_name != req_pred['attr_name'] or
                             s_key != schema_key_for(req_pred['restrictions'][0]['schema_key'])
@@ -1596,7 +1660,7 @@ class HolderProver(_BaseAgent):
                     filt[s_key] = {}
                 filt[s_key]['pred-match'] = pred_match['match']
 
-            (referents, claims_found_json) = await self.get_claims(
+            (_, claims_found_json) = await self.get_claims(
                 json.dumps(find_req),
                 filt)
             claims_found = json.loads(claims_found_json)
@@ -1644,14 +1708,22 @@ class HolderProver(_BaseAgent):
             for form_s_key_spec in (form['data']['schemata'] +
                     [r_attr['schema'] for r_attr in form['data']['requested-attrs']]):
                 s_key = schema_key_for(form_s_key_spec)
-                await self.get_schema(s_key)  # add to cache en passant
+                schema_json = await self.get_schema(s_key)  # add to cache en passant
+                schema = json.loads(schema_json)
+                if not schema:
+                    logger.debug(
+                        'HolderProver.process_post: <!< absent schema {}, {} may pertain to another ledger'.format(
+                            s_key,
+                            form['type']))
+                    raise AbsentSchema(
+                        'Absent schema {}, {} may pertain to another ledger'.format(s_key, form['type']))
                 form_schema_keys.append(s_key)
 
             req_attrs = {}
             if form['data']['requested-attrs']:
                 for req_attr in form['data']['requested-attrs']:
                     s_key = schema_key_for(req_attr['schema'])
-                    schema = schema_cache[s_key]
+                    schema = SCHEMA_CACHE[s_key]
                     for name in req_attr['names'] or schema['data']['attr_names']:
                         req_attrs['{}_{}_uuid'.format(schema['seqNo'], name)] = {
                             'name': name,
@@ -1665,7 +1737,7 @@ class HolderProver(_BaseAgent):
                         }
             else:
                 for s_key in form_schema_keys:
-                    schema = schema_cache[s_key]
+                    schema = SCHEMA_CACHE[s_key]
                     for attr_name in schema['data']['attr_names']:
                         req_attrs['{}_{}_uuid'.format(schema['seqNo'], attr_name)] = {
                             'name': attr_name,
@@ -1693,7 +1765,7 @@ class HolderProver(_BaseAgent):
                 if len(claims_found['attrs'][attr_uuid]) != 1]
             if x_referents:
                 logger.debug('HolderProver.process_post: <!< claims specification out of focus (too many claims)')
-                raise ClaimsFocus(  
+                raise ClaimsFocus(
                     'Proof request requires unique claims per attribute; violators: {}'.format(x_referents))
 
             proof_req = {
@@ -1704,7 +1776,6 @@ class HolderProver(_BaseAgent):
                 'requested_predicates': {}
             }
 
-            referents = form['data']['referents']
             requested_claims = {
                 'self_attested_attributes': {},
                 'requested_attrs': {
@@ -1829,10 +1900,25 @@ class Verifier(_BaseAgent):
         for claim_uuid in claims:
             claim_s_key = schema_key_for(claims[claim_uuid]['schema_key'])
             schema = json.loads(await self.get_schema(claim_s_key))
+            if not schema:
+                logger.debug(
+                    'Verifier.verify_proof: <!< absent schema {}, proof may pertain to another ledger'.format(
+                        claim_s_key))
+                raise AbsentSchema(
+                    'Absent schema {}, proof may pertain to another ledger'.format(claim_s_key))
             uuid2schema[claim_uuid] = schema
             uuid2claim_def[claim_uuid] = json.loads(await self.get_claim_def(
                 schema['seqNo'],
                 claims[claim_uuid]['issuer_did']))
+            if not uuid2claim_def[claim_uuid]:
+                logger.debug(
+                    'Verifier.verify_proof: <!< absent claim def for schema@#{}, issuer-did {}'.format(
+                        schema['seqNo'],
+                        claims[claim_uuid]['issuer_did']))
+                raise AbsentSchema(
+                    'Absent claim def for schema@#{}, issuer-did {}'.format(
+                        schema['seqNo'],
+                        claims[claim_uuid]['issuer_did']))
 
         rv = json.dumps(await anoncreds.verifier_verify_proof(
             json.dumps(proof_req),
@@ -1860,9 +1946,9 @@ class Verifier(_BaseAgent):
 
         # Try dispatching to each ancestor from _BaseAgent first
         mro = Verifier._mro_dispatch()
-        for ResponderClass in mro:
+        for responder_class in mro:
             try:
-                rv = await ResponderClass.process_post(self, form)
+                rv = await responder_class.process_post(self, form)
                 logger.debug('Verifier.process_post: <<< {}'.format(rv))
                 return rv
             except TokenType:

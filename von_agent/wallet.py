@@ -14,14 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from indy import did, wallet
-from indy.error import IndyError, ErrorCode
-from von_agent.error import AbsentWallet, ClosedPool, JSONValidation
-from von_agent.nodepool import NodePool
 
 import json
 import logging
-import sys
+
+from indy import did, wallet
+from indy.error import IndyError, ErrorCode
+from von_agent.error import AbsentWallet, ClosedPool, CorruptWallet, JSONValidation
+from von_agent.nodepool import NodePool
 
 
 class Wallet:
@@ -205,27 +205,6 @@ class Wallet:
         await temp_wallet.remove()
         return rv
 
-    async def __aenter__(self) -> 'Wallet':
-        """
-        Context manager entry. Open (created) wallet as configured, for closure on context manager exit.
-        For use in monolithic call opening, using, and closing wallet.
-
-        Raise any IndyError causing failure to open wallet, or AbsentWallet on attempt to enter wallet
-        not yet created.
-
-        :return: current object
-        """
-
-        logger = logging.getLogger(__name__)
-        logger.debug('Wallet.__aenter__: >>>')
-
-        if not self.created:
-            raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
-
-        rv = await self.open()
-        logger.debug('Wallet.__aenter__: <<<')
-        return rv
-
     async def create(self) -> 'Wallet':
         """
         Create wallet as configured and store DID, or else re-use any existing configuration.
@@ -258,9 +237,10 @@ class Wallet:
             if e.error_code == ErrorCode.WalletAlreadyExistsError:
                 logger.info('Wallet already exists: {}'.format(self.name))
             else:
-                logger.debug('Wallet.create: <!< indy error code {}'.format(self.e.error_code))
+                logger.debug('Wallet.create: <!< indy error code {}'.format(e.error_code))
                 raise
 
+        logger.debug('Attempting to open wallet {}'.format(self.name))
         self._handle = await wallet.open_wallet(
             self.name,
             json.dumps(self.cfg),
@@ -274,20 +254,43 @@ class Wallet:
             logger.debug('Wallet {} stored new DID {}, verkey {} from seed'.format(self.name, self.did, self.verkey))
         else:
             self._created = True
-            # TODO this should call did.list_my_dids_with_meta(wallet_handle: int) -> str to get existing did
-            # see https://github.com/ianco/indy-sdk/blob/master/wrappers/python/tests/did/test_list_my_dids_with_meta.py
-            # res_json = await did.list_my_dids_with_meta(wallet_handle)
-            # res = json.loads(res_json)
-            # my_did = res[0]["did"]
+            logger.debug('Attempting to derive seed to did for wallet {}'.format(self.name))
             self._did = await self._seed2did()
-            self._verkey = await did.key_for_did(self.pool.handle, self.handle, self.did)
-            # ODOT
+            try:
+                self._verkey = await did.key_for_did(self.pool.handle, self.handle, self.did)
+            except IndyError:
+                logger.debug(
+                    'Wallet.create: <!< no verkey for DID {} on ledger, wallet {} may pertain to another'.format(
+                        self.did,
+                        self.name))
+                raise CorruptWallet(
+                    'No verkey for DID {} on ledger, wallet {} may pertain to another'.format(
+                        self.did,
+                        self.name))
             logger.info('Wallet {} got verkey {} for existing DID {}'.format(self.name, self.verkey, self.did))
 
         await wallet.close_wallet(self.handle)
 
         logger.debug('Wallet.create: <<<')
         return self
+
+    async def __aenter__(self) -> 'Wallet':
+        """
+        Context manager entry. Open (created) wallet as configured, for closure on context manager exit.
+        For use in monolithic call opening, using, and closing wallet.
+
+        Raise any IndyError causing failure to open wallet, or AbsentWallet on attempt to enter wallet
+        not yet created.
+
+        :return: current object
+        """
+
+        logger = logging.getLogger(__name__)
+        logger.debug('Wallet.__aenter__: >>>')
+
+        rv = await self.open()
+        logger.debug('Wallet.__aenter__: <<<')
+        return rv
 
     async def open(self) -> 'Wallet':
         """
@@ -324,7 +327,7 @@ class Wallet:
         logger.debug('Wallet.open: <<<')
         return self
 
-    async def __aexit__(self, exc_type, exc, traceback) -> None: 
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
         """
         Context manager exit. Close wallet and delete if so configured.
         For use in monolithic call opening, using, and closing the wallet.
@@ -351,10 +354,12 @@ class Wallet:
         logger.debug('Wallet.close: >>>')
 
         if not self.handle:
-            logger.warn('Abstaining from closing wallet {}: already closed'.format(self.name))
+            logger.warning('Abstaining from closing wallet {}: already closed'.format(self.name))
         else:
+            logger.debug('Closing wallet {}'.format(self.name))
             await wallet.close_wallet(self.handle)
             if self.auto_remove:
+                logger.info('Auto-removing wallet {}'.format(self.name))
                 await self.remove()
         self._handle = None
 
@@ -369,9 +374,10 @@ class Wallet:
         logger.debug('Wallet.remove: >>>')
 
         try:
+            logger.info('Removing wallet: {}'.format(self.name))
             await wallet.delete_wallet(self.name, self.creds)
-        except Exception:
-            logger.info('Abstaining from wallet removal: {}'.format(sys.exc_info()[0]))
+        except IndyError as e:
+            logger.info('Abstaining from wallet removal; indy-sdk error code {}'.format(e.error_code))
 
         logger.debug('Wallet.remove: <<<')
 
@@ -381,7 +387,7 @@ class Wallet:
 
         :return: representation for current object
         """
-        
+
         return '{}({}, [SEED], {}, {})'.format(
             self.__class__.__name__,
             self.pool,

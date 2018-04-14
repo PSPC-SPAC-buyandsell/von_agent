@@ -32,6 +32,8 @@ class ErrorCode(IntEnum):
     AbsentAttribute = 1004,
     AbsentMasterSecret = 1005,
     CorruptWallet = 1006,
+    AbsentSchema = 1007,
+    AbsentClaimDef = 1008,
 
     # Errors to do with schema keys
     SchemaKeySpec = 2000,
@@ -62,6 +64,7 @@ class VonAgentError(Exception):
         :param message: error message
         """
 
+        super().__init__()
         self.error_code = error_code
         self.message = message
 
@@ -156,6 +159,36 @@ class CorruptWallet(VonAgentError):
         super().__init__(ErrorCode.CorruptWallet, message)
 
 
+class AbsentSchema(VonAgentError):
+    """
+    (HolderProver) Agent attempting operation requiring unavailable schema.
+    """
+
+    def __init__(self, message: str):
+        """
+        Initialize on message.
+
+        :param message: error message
+        """
+
+        super().__init__(ErrorCode.AbsentSchema, message)
+
+
+class AbsentClaimDef(VonAgentError):
+    """
+    (HolderProver) Agent attempting operation requiring unavailable claim definition.
+    """
+
+    def __init__(self, message: str):
+        """
+        Initialize on message.
+
+        :param message: error message
+        """
+
+        super().__init__(ErrorCode.AbsentClaimDef, message)
+
+
 class AbsentMasterSecret(VonAgentError):
     """
     (HolderProver) Agent attempting operation requiring absent master secret.
@@ -244,4 +277,3 @@ class JSONValidation(VonAgentError):
         """
 
         super().__init__(ErrorCode.JSONValidation, message)
-

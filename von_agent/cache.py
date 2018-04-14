@@ -14,18 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from von_agent.schemakey import SchemaKey
-from threading import Lock
-from typing import Union
-from von_agent.error import SchemaKeySpec, CacheIndex
 
 import logging
+
+from threading import RLock
+from typing import Union
+from von_agent.error import CacheIndex
+from von_agent.schemakey import SchemaKey
 
 
 class SchemaCache:
     """
     Retain schemata and fetch by key (origin_did, name, version) or by sequence number.
+
+    A lock shares access to critical sections as relying code specifies them (e.g., check and get/set).
+    Note that this one lock applies across all instances - the design of this class intends it to be a singleton.
     """
+
+    lock = RLock()
 
     def __init__(self) -> None:
         """
@@ -152,8 +158,8 @@ class SchemaCache:
         """
 
         return {'{}; {}'.format(seq_no, tuple(self._seq_no2schema_key[seq_no])):
-                self._schema_key2schema[self._seq_no2schema_key[seq_no]]
-                    for seq_no in self._seq_no2schema_key}
+            self._schema_key2schema[self._seq_no2schema_key[seq_no]]
+                for seq_no in self._seq_no2schema_key}
 
     def __str__(self) -> str:
         """
@@ -165,7 +171,16 @@ class SchemaCache:
         return 'SchemaCache({})'.format(self.dict())
 
 
-schema_cache_lock = Lock()
-claim_def_cache_lock = Lock()
-schema_cache = SchemaCache()
-claim_def_cache = {}
+class ClaimDefCache(dict):
+    """
+    Retain claim definitions and fetch by (schema sequence number, issuer DID) tuple.
+
+    A lock shares access to critical sections as relying code specifies them (e.g., check and get/set).
+    Note that this one lock applies across all instances - the design of this class intends it to be a singleton.
+    """
+
+    lock = RLock()
+
+
+SCHEMA_CACHE = SchemaCache()
+CLAIM_DEF_CACHE = ClaimDefCache()

@@ -355,7 +355,7 @@ class _BaseAgent(_AgentCore):
         super().__init__(wallet)
 
         self._cfg = cfg or {}
-        # validate_config('agent', self._cfg)
+        validate_config('agent', self._cfg)
 
         logger.debug('_BaseAgent.__init__: <<<')
 
@@ -432,16 +432,11 @@ class _BaseAgent(_AgentCore):
             req_json = await ledger.build_get_claim_def_txn(
                 self.did,
                 schema_seq_no,
-                issuer_did))
-            rv = claim_def_cache[(schema_seq_no, issuer_did)]
-            logger.debug('_BaseAgent.get_claim_def: <<< {}'.format(rv))
-            return json.dumps(rv)
+                'CL',
+                issuer_did)
 
-        req_json = await ledger.build_get_claim_def_txn(
-            self.did,
-            schema_seq_no,
-            'CL',
-            issuer_did)
+            resp_json = await ledger.submit_request(self.pool.handle, req_json)
+            await asyncio.sleep(0)
 
             resp = json.loads(resp_json)
             if ('op' in resp) and (resp['op'] in ('REQNACK', 'REJECT')):
@@ -853,14 +848,14 @@ class Issuer(Origin):
                         schema['data']['name'],
                         schema['data']['version']))
                 else:
-                    logger.error('Issuer.send_claim_def: <!< corrupt wallet {}'.format(self.wallet.name))
+                    logger.debug('Issuer.send_claim_def: <!< corrupt wallet {}'.format(self.wallet.name))
                     raise CorruptWallet(
                         'Corrupt Issuer wallet {} has claim def on schema {} version {} not on ledger'.format(
                             self.wallet.name,
                             schema['data']['name'],
                             schema['data']['version']))
             else:
-                logger.error(
+                logger.debug(
                     'Issuer.send_claim_def: <!< cannot store claim def in wallet {}: indy error code {}'.format(
                         self.wallet.name,
                         e.error_code))
@@ -1025,7 +1020,6 @@ class Issuer(Origin):
         logger.debug('Issuer.process_post: <!< not this form type: {}'.format(form['type']))
         raise TokenType('{} does not support token type {}'.format(self.__class__.__name__, form['type']))
 
-my_schema_cache = dict()
 
 class HolderProver(_BaseAgent):
     """
@@ -1092,10 +1086,9 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.warn('HolderProver.store_claim_req: >>> claim_offer_json: {}, claim_def_json: {}'.format(
+        logger.debug('HolderProver.store_claim_req: >>> claim_offer_json: {}, claim_def_json: {}'.format(
             claim_offer_json,
             claim_def_json))
-        start_time = time()
 
         if self._master_secret is None:
             logger.debug('HolderProver.store_claim_req: <!< master secret not set')
@@ -1104,10 +1097,6 @@ class HolderProver(_BaseAgent):
         await anoncreds.prover_store_claim_offer(
             self.wallet.handle,
             claim_offer_json)
-
-        elapsed_time = time() - start_time
-        logger.warn('prover_store_claim_offer step elapsed time = {}'.format(elapsed_time))
-        start_time = time()
 
         schema_seq_no = json.loads(claim_def_json)['ref']  # = schema seq no in claim def
         schema_json = await self.get_schema(schema_seq_no)  # update schema cache en passant if need be
@@ -1125,10 +1114,7 @@ class HolderProver(_BaseAgent):
             claim_def_json,
             self._master_secret)
 
-        elapsed_time = time() - start_time
-        logger.warn('prover_create_and_store_claim_req step elapsed time = {}'.format(elapsed_time))
-
-        logger.warn('HolderProver.store_claim_req: <<< {}'.format(rv))
+        logger.debug('HolderProver.store_claim_req: <<< {}'.format(rv))
         return rv
 
     async def store_claim(self, claim_json: str) -> None:
@@ -1139,13 +1125,13 @@ class HolderProver(_BaseAgent):
         """
 
         logger = logging.getLogger(__name__)
-        logger.warn('HolderProver.store_claim: >>> claim_json: {}'.format(claim_json))
+        logger.debug('HolderProver.store_claim: >>> claim_json: {}'.format(claim_json))
 
         await anoncreds.prover_store_claim(
             self.wallet.handle,
             claim_json,
             None)  # rev_reg_json - TODO: revocation
-        logger.warn('HolderProver.store_claim: <<<')
+        logger.debug('HolderProver.store_claim: <<<')
 
     async def create_proof(self, proof_req: dict, claims: dict, requested_claims: dict = None) -> str:
         """
@@ -1247,11 +1233,8 @@ class HolderProver(_BaseAgent):
             raise ClaimsFocus('Proof request requires unique claims per attribute; violators: {}'.format(x_uuids))
 
         referent2schema = {}
-        referent2schema_cache = dict()
         referent2claim_def = {}
-        referent2claim_def_cache = dict()
         for attr_uuid in claims['attrs']:
-            # logger.warn('HolderProver.create_proof: <<< get schema for {} {}'.format(attr_uuid, claims['attrs'][attr_uuid][0]['issuer_did']))
             s_key = schema_key_for(claims['attrs'][attr_uuid][0]['schema_key'])
             schema = json.loads(await self.get_schema(s_key))  # make sure it's in the schema cache
             if not schema:

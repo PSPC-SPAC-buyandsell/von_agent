@@ -146,7 +146,7 @@ class Wallet:
         return self._creds
 
     @property
-    def xtype(self) -> str:
+    def xtype(self) -> dict:
         """
         Accessor for wallet type.
 
@@ -254,19 +254,9 @@ class Wallet:
             logger.debug('Wallet {} stored new DID {}, verkey {} from seed'.format(self.name, self.did, self.verkey))
         else:
             self._created = True
-            logger.debug('Attempting to derive seed to did for wallet {}'.format(self.name))
             self._did = await self._seed2did()
-            try:
-                self._verkey = await did.key_for_did(self.pool.handle, self.handle, self.did)
-            except IndyError:
-                logger.debug(
-                    'Wallet.create: <!< no verkey for DID {} on ledger, wallet {} may pertain to another'.format(
-                        self.did,
-                        self.name))
-                raise CorruptWallet(
-                    'No verkey for DID {} on ledger, wallet {} may pertain to another'.format(
-                        self.did,
-                        self.name))
+            self._verkey = await did.key_for_did(self.pool.handle, self.handle, self.did)
+
             logger.info('Wallet {} got verkey {} for existing DID {}'.format(self.name, self.verkey, self.did))
 
         await wallet.close_wallet(self.handle)

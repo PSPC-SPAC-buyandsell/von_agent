@@ -52,6 +52,7 @@ class _AgentCore:
         Initializer for agent. Retain wallet.
 
         Raise AbsentWallet if wallet is not yet created.
+        Note - move the exception to __aenter__
 
         :param wallet: wallet for agent use
         """
@@ -108,11 +109,16 @@ class _AgentCore:
         Context manager entry. Open wallet and store agent DID in it.
         For use in monolithic call opening, using, and closing the agent.
 
+        Raise AbsentWallet if wallet is not yet created.
+
         :return: current object
         """
 
         logger = logging.getLogger(__name__)
         logger.debug('_AgentCore.__aenter__: >>>')
+
+        if not self.wallet.created:
+            raise AbsentWallet('Must create wallet {} before creating agent'.format(wallet.name))
 
         rv = await self.open()
 
